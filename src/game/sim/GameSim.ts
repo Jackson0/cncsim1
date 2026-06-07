@@ -1326,7 +1326,7 @@ export class GameSim {
       const range = def.weaponRange ?? 5;
       if (dist(u.x, u.y, tx, ty) <= range) {
         if (u.weaponCooldown <= 0) {
-          this.dealDamage(target, def.weaponDamage ?? 10, u.houseId, u.x, u.y);
+          this.dealDamage(target, def.weaponDamage ?? 10, u.houseId, u.x, u.y, { kind: 'unit', type: u.type });
           u.weaponCooldown = def.weaponCooldown ?? 45;
         }
       } else {
@@ -1367,7 +1367,7 @@ export class GameSim {
           const ty = 'cellX' in target ? target.cellY + 0.5 : target.y;
           if (dist(i.x, i.y, tx, ty) <= (def.weaponRange ?? 4)) {
             if (i.weaponCooldown <= 0) {
-              this.dealDamage(target, def.weaponDamage ?? 5, i.houseId, i.x, i.y);
+              this.dealDamage(target, def.weaponDamage ?? 5, i.houseId, i.x, i.y, { kind: 'infantry', type: i.type });
               i.weaponCooldown = def.weaponCooldown ?? 35;
             }
           } else {
@@ -1406,7 +1406,7 @@ export class GameSim {
           const ty = 'cellX' in target ? target.cellY + 0.5 : target.y;
           if (dist(a.x, a.y, tx, ty) <= (def.weaponRange ?? 6)) {
             if (a.weaponCooldown <= 0) {
-              this.dealDamage(target, def.weaponDamage ?? 30, a.houseId, a.x, a.y);
+              this.dealDamage(target, def.weaponDamage ?? 30, a.houseId, a.x, a.y, { kind: 'aircraft', type: a.type });
               a.weaponCooldown = def.weaponCooldown ?? 40;
             }
           } else {
@@ -1440,7 +1440,7 @@ export class GameSim {
       const by = b.cellY + 0.5;
       const target = this.findEnemyTarget(b.houseId, bx, by, def.weaponRange, def.antiAir ?? false);
       if (target) {
-        this.dealDamage(target, def.weaponDamage ?? 10, b.houseId, bx, by);
+        this.dealDamage(target, def.weaponDamage ?? 10, b.houseId, bx, by, { kind: 'structure', type: b.type });
         b.weaponCooldown = def.weaponCooldown ?? 45;
       }
     }
@@ -1455,7 +1455,7 @@ export class GameSim {
       if (!def.weaponDamage) continue;
       const nearEnemy = this.findEnemyTarget(u.houseId, u.x, u.y, def.weaponRange ?? 5, false);
       if (nearEnemy && u.weaponCooldown <= 0) {
-        this.dealDamage(nearEnemy, def.weaponDamage, u.houseId, u.x, u.y);
+        this.dealDamage(nearEnemy, def.weaponDamage, u.houseId, u.x, u.y, { kind: 'unit', type: u.type });
         u.weaponCooldown = def.weaponCooldown ?? 45;
       }
     }
@@ -1603,6 +1603,7 @@ export class GameSim {
     attackerHouseId: number,
     fromX?: number,
     fromY?: number,
+    attacker?: { kind: 'structure' | 'unit' | 'infantry' | 'aircraft'; type: string },
   ): void {
     target.hp -= damage;
     const tx = 'cellX' in target ? target.cellX + 0.5 : target.x;
@@ -1624,6 +1625,8 @@ export class GameSim {
       fromY,
       houseId: attackerHouseId,
       amount: damage,
+      itemKind: attacker?.kind,
+      itemType: attacker?.type,
       targetHouseId: targetMeta.houseId,
       targetKind: targetMeta.kind,
       targetType: targetMeta.type,
