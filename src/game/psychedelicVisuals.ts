@@ -16,6 +16,7 @@ import {
 } from './definitions';
 import type { Aircraft, Building, House, Infantry, OrePatch, Unit } from './entities';
 import type { SimEvent } from './sim/GameSim';
+import { getWeaponVisual } from './weaponVisuals';
 
 export type VisualQuality = 'low' | 'medium' | 'high';
 
@@ -175,6 +176,7 @@ interface ImpactMandala {
   profile: FactionVisualProfile;
   weaponType: string;
   intensity: number;
+  impactTint?: number;
   age: number;
   duration: number;
   destroy: boolean;
@@ -1262,38 +1264,47 @@ export class CombatEffectsRenderer extends ConfigurableRenderer {
     this.gfx = scene.add.graphics().setDepth(6).setBlendMode(Phaser.BlendModes.ADD);
   }
 
-  emitDamage(event: SimEvent, profile: FactionVisualProfile, weaponType: string): void {
+  emitDamage(event: SimEvent, profile: FactionVisualProfile, weaponId: string): void {
+    const visual = getWeaponVisual(weaponId);
     const toX = event.x * CELL_SIZE;
     const toY = event.y * CELL_SIZE;
     if (event.fromX !== undefined && event.fromY !== undefined) {
-      this.emitBeam(event.fromX * CELL_SIZE, event.fromY * CELL_SIZE, toX, toY, profile, weaponType);
+      this.emitBeam(event.fromX * CELL_SIZE, event.fromY * CELL_SIZE, toX, toY, profile, weaponId);
     }
-    this.emitImpact(toX, toY, profile, weaponType, weaponIntensity(weaponType));
+    this.emitImpact(toX, toY, profile, weaponId, visual.intensity, visual.impactTint);
   }
 
-  emitBeam(fromX: number, fromY: number, toX: number, toY: number, profile: FactionVisualProfile, weaponType: string): void {
-    const duration = weaponType === 'artillery' ? 520 : weaponType === 'tesla' ? 260 : 190;
+  emitBeam(fromX: number, fromY: number, toX: number, toY: number, profile: FactionVisualProfile, weaponId: string): void {
+    const visual = getWeaponVisual(weaponId);
     this.beams.push({
       fromX,
       fromY,
       toX,
       toY,
       profile,
-      weaponType,
+      weaponType: weaponId,
       age: 0,
-      duration,
+      duration: visual.duration,
       seed: Math.random() * Math.PI * 2,
     });
     while (this.beams.length > this.config.maxActiveBeams) this.beams.shift();
   }
 
-  emitImpact(x: number, y: number, profile: FactionVisualProfile, weaponType: string, intensity: number): void {
+  emitImpact(
+    x: number,
+    y: number,
+    profile: FactionVisualProfile,
+    weaponId: string,
+    intensity: number,
+    impactTint?: number,
+  ): void {
     this.mandalas.push({
       x,
       y,
       profile,
-      weaponType,
+      weaponType: weaponId,
       intensity,
+      impactTint,
       age: 0,
       duration: 320 + intensity * 260,
       destroy: false,
@@ -1341,44 +1352,124 @@ export class CombatEffectsRenderer extends ConfigurableRenderer {
       beam.age += delta;
       const pct = Phaser.Math.Clamp(beam.age / beam.duration, 0, 1);
       const alpha = 1 - pct;
-      const style = beam.weaponType === 'tesla' ? 'zigzag' : beam.weaponType === 'flame' ? 'wave' : beam.profile.beamStyle;
-      const headPct = beam.weaponType === 'artillery' ? pct : 1;
+      const visual = getWeaponVisual(beam.weaponType);
+      const headPct = visual.beamMode === 'projectile' || visual.beamMode === 'grenade' ? pct : 1;
       const headX = Phaser.Math.Linear(beam.fromX, beam.toX, headPct);
       const headY = Phaser.Math.Linear(beam.fromY, beam.toY, headPct);
 
-      if (beam.weaponType === 'artillery') {
-        this.gfx.lineStyle(2, beam.profile.secondary, alpha * 0.22);
-        this.gfx.lineBetween(beam.fromX, beam.fromY, headX, headY);
-        this.gfx.fillStyle(beam.profile.accent, alpha * 0.82);
-        this.gfx.fillCircle(headX, headY, 5 + Math.sin(beam.age * 0.035) * 1.5);
-        this.gfx.fillStyle(beam.profile.primary, alpha * 0.2);
-        this.gfx.fillCircle(headX, headY, 14);
-        return beam.age < beam.duration;
+      switch (visual.beamMode) {
+        case 'projectile':
+        case 'grenade':
+          this.drawProjectileBeam(beam, headX, headY, alpha, visual);
+          break;
+        case 'tesla':
+          this.drawJaggedBeam(beam.fromX, beam.fromY, headX, headY, beam.profile, alpha, beam.seed + beam.age * 0.06);
+          break;
+        case 'flame':
+          this.drawWaveBeam(beam.fromX, beam.fromY, headX, headY, beam.profile, alpha, beam.seed + beam.age * 0.025, true);
+          break;
+        case 'rocket':
+          this.drawRocketBeam(beam, headX, headY, alpha, visual);
+          break;
+        case 'tracer':
+          this.drawTracerBeam(beam, headX, headY, alpha, visual);
+          break;
+        case 'shell_heavy':
+          this.drawShellBeam(beam, headX, headY, alpha, visual, [-4, 0, 4]);
+          break;
+        case 'shell_medium':
+          this.drawShellBeam(beam, headX, headY, alpha, visual, [0]);
+          break;
+        case 'shell_light':
+          this.drawShellBeam(beam, headX, headY, alpha, visual, [0], true);
+          break;
+        case 'burst':
+          this.drawShellBeam(beam, headX, headY, alpha, visual, [-2.5, 2.5]);
+          break;
+        case 'strafe':
+          this.drawWaveBeam(beam.fromX, beam.fromY, headX, headY, beam.profile, alpha, beam.seed + beam.age * 0.08, false);
+          break;
       }
 
-      if (style === 'split') {
-        const offsets = [-3, 0, 3];
-        const normal = lineNormal(beam.fromX, beam.fromY, headX, headY);
-        for (let i = 0; i < offsets.length; i++) {
-          const offset = offsets[i];
-          this.gfx.lineStyle(i === 1 ? 2 : 1, i === 1 ? 0xffffff : beam.profile.primary, alpha * (i === 1 ? 0.86 : 0.45));
-          this.gfx.lineBetween(beam.fromX + normal.x * offset, beam.fromY + normal.y * offset, headX + normal.x * offset, headY + normal.y * offset);
-        }
-      } else if (style === 'zigzag') {
-        this.drawJaggedBeam(beam.fromX, beam.fromY, headX, headY, beam.profile, alpha, beam.seed + beam.age * 0.06);
-      } else if (style === 'wave') {
-        this.drawWaveBeam(beam.fromX, beam.fromY, headX, headY, beam.profile, alpha, beam.seed + beam.age * 0.025, beam.weaponType === 'flame');
-      } else {
-        this.gfx.lineStyle(5, beam.profile.primary, alpha * 0.16);
-        this.gfx.lineBetween(beam.fromX, beam.fromY, headX, headY);
-        this.gfx.lineStyle(2, 0xffffff, alpha * 0.88);
-        this.gfx.lineBetween(beam.fromX, beam.fromY, headX, headY);
-      }
-
-      this.gfx.fillStyle(0xffffff, alpha * 0.8);
-      this.gfx.fillCircle(headX, headY, 2.6);
+      this.gfx.fillStyle(visual.impactTint ?? 0xffffff, alpha * 0.82);
+      this.gfx.fillCircle(headX, headY, visual.headSize);
       return beam.age < beam.duration;
     });
+  }
+
+  private drawProjectileBeam(
+    beam: BeamEffect,
+    headX: number,
+    headY: number,
+    alpha: number,
+    visual: ReturnType<typeof getWeaponVisual>,
+  ): void {
+    this.gfx.lineStyle(visual.lineWidth, beam.profile.secondary, alpha * 0.22);
+    this.gfx.lineBetween(beam.fromX, beam.fromY, headX, headY);
+    this.gfx.fillStyle(visual.impactTint ?? beam.profile.accent, alpha * 0.82);
+    this.gfx.fillCircle(headX, headY, visual.headSize + Math.sin(beam.age * 0.035) * 1.2);
+    this.gfx.fillStyle(beam.profile.primary, alpha * 0.2);
+    this.gfx.fillCircle(headX, headY, visual.headSize * 2.6);
+  }
+
+  private drawRocketBeam(
+    beam: BeamEffect,
+    headX: number,
+    headY: number,
+    alpha: number,
+    visual: ReturnType<typeof getWeaponVisual>,
+  ): void {
+    this.gfx.lineStyle(visual.lineWidth + 2, visual.impactTint ?? beam.profile.primary, alpha * 0.14);
+    this.gfx.lineBetween(beam.fromX, beam.fromY, headX, headY);
+    this.gfx.lineStyle(visual.lineWidth, 0xffffff, alpha * 0.78);
+    this.gfx.lineBetween(beam.fromX, beam.fromY, headX, headY);
+    this.gfx.fillStyle(visual.impactTint ?? beam.profile.accent, alpha * 0.35);
+    this.gfx.fillCircle(headX - (headX - beam.fromX) * 0.08, headY - (headY - beam.fromY) * 0.08, visual.headSize * 1.4);
+  }
+
+  private drawTracerBeam(
+    beam: BeamEffect,
+    headX: number,
+    headY: number,
+    alpha: number,
+    visual: ReturnType<typeof getWeaponVisual>,
+  ): void {
+    this.gfx.lineStyle(visual.lineWidth, visual.impactTint ?? 0xfff0c8, alpha * 0.72);
+    this.gfx.lineBetween(beam.fromX, beam.fromY, headX, headY);
+    this.gfx.lineStyle(1, 0xffffff, alpha * 0.9);
+    this.gfx.lineBetween(beam.fromX, beam.fromY, headX, headY);
+  }
+
+  private drawShellBeam(
+    beam: BeamEffect,
+    headX: number,
+    headY: number,
+    alpha: number,
+    visual: ReturnType<typeof getWeaponVisual>,
+    offsets: number[],
+    light = false,
+  ): void {
+    const normal = lineNormal(beam.fromX, beam.fromY, headX, headY);
+    for (let i = 0; i < offsets.length; i++) {
+      const offset = offsets[i];
+      const core = offset === 0;
+      const width = core ? visual.lineWidth : Math.max(1, visual.lineWidth - 1);
+      const glow = light ? alpha * 0.1 : alpha * 0.16;
+      this.gfx.lineStyle(width + (core ? 3 : 1), beam.profile.primary, glow);
+      this.gfx.lineBetween(
+        beam.fromX + normal.x * offset,
+        beam.fromY + normal.y * offset,
+        headX + normal.x * offset,
+        headY + normal.y * offset,
+      );
+      this.gfx.lineStyle(width, core ? 0xffffff : beam.profile.accent, alpha * (core ? 0.88 : 0.42));
+      this.gfx.lineBetween(
+        beam.fromX + normal.x * offset,
+        beam.fromY + normal.y * offset,
+        headX + normal.x * offset,
+        headY + normal.y * offset,
+      );
+    }
   }
 
   private updateMandalas(delta: number): void {
@@ -1398,7 +1489,8 @@ export class CombatEffectsRenderer extends ConfigurableRenderer {
       }
 
       if (this.config.enableCombatMandalas) {
-        const spokes = mandala.destroy ? 14 : mandala.weaponType === 'tesla' ? 12 : 8;
+        const visual = getWeaponVisual(mandala.weaponType);
+        const spokes = mandala.destroy ? 14 : visual.beamMode === 'tesla' ? 12 : visual.beamMode === 'rocket' ? 10 : 8;
         drawRadialSpokes(
           this.gfx,
           mandala.x,
@@ -1407,7 +1499,7 @@ export class CombatEffectsRenderer extends ConfigurableRenderer {
           radius * (mandala.destroy ? 0.88 : 0.62),
           spokes,
           mandala.age * 0.004 + mandala.profile.mandalaSeed,
-          mandala.weaponType === 'flame' ? 0xffb34d : mandala.profile.secondary,
+          mandala.impactTint ?? visual.impactTint ?? mandala.profile.secondary,
           alpha * 0.34,
         );
       }
@@ -1597,16 +1689,6 @@ function lineNormal(fromX: number, fromY: number, toX: number, toY: number): Pha
   const dy = toY - fromY;
   const len = Math.max(1, Math.hypot(dx, dy));
   return new Phaser.Math.Vector2(-dy / len, dx / len);
-}
-
-function weaponIntensity(weaponType: string): number {
-  if (weaponType === 'tesla') return 2.1;
-  if (weaponType === 'artillery') return 1.9;
-  if (weaponType === 'flame') return 1.55;
-  if (weaponType === 'aircraft') return 1.45;
-  if (weaponType === 'rocket') return 1.35;
-  if (weaponType === 'infantry') return 0.72;
-  return 1;
 }
 
 function mixColor(a: number, b: number, t: number): number {

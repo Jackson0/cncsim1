@@ -5,14 +5,13 @@ import {
   Difficulty,
   HARVESTER_CAPACITY,
   INFANTRY_DEFS,
-  InfantryType,
   STRUCT_DEFS,
   StructType,
   TICKS_PER_SECOND,
   UNIT_DEFS,
   UnitType,
 } from '../game/definitions';
-import type { Aircraft, Building, House, Infantry, OrePatch, Unit } from '../game/entities';
+import type { Building, House, OrePatch, Unit } from '../game/entities';
 import { DEFAULT_MAP_SETUP, type MapSetupConfig } from '../game/mapSetup';
 import {
   BaseAuraRenderer,
@@ -29,6 +28,7 @@ import {
   type VisualQuality,
 } from '../game/psychedelicVisuals';
 import { GameSim, type SimEvent } from '../game/sim/GameSim';
+import { resolveWeaponVisualId, weaponDamageHint } from '../game/weaponVisuals';
 import {
   DEFAULT_DEBUG_MAX_TICKS,
   DebugTelemetry,
@@ -484,35 +484,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private inferWeaponType(ev: SimEvent): string {
-    if (ev.fromX === undefined || ev.fromY === undefined || ev.houseId === undefined) return 'signal';
-
-    const sourceBuilding = this.findClosestBuilding(ev.houseId, ev.fromX, ev.fromY, 0.95);
-    if (sourceBuilding) {
-      if (sourceBuilding.type === StructType.Tesla) return 'tesla';
-      if (sourceBuilding.type === StructType.FlameTurret) return 'flame';
-      if (sourceBuilding.type === StructType.Sam || sourceBuilding.type === StructType.AaGun) return 'rocket';
-      if (sourceBuilding.type === StructType.Pillbox) return 'infantry';
-      return 'cannon';
+    if (ev.itemKind && ev.itemType) {
+      return resolveWeaponVisualId(ev.itemKind, ev.itemType);
     }
-
-    const sourceUnit = this.findClosestUnit(ev.houseId, ev.fromX, ev.fromY, 0.95);
-    if (sourceUnit) {
-      if (sourceUnit.type === UnitType.Artillery) return 'artillery';
-      if (sourceUnit.type === UnitType.Apc) return 'infantry';
-      return 'cannon';
-    }
-
-    const sourceInfantry = this.findClosestInfantry(ev.houseId, ev.fromX, ev.fromY, 0.95);
-    if (sourceInfantry) {
-      if (sourceInfantry.type === InfantryType.Flamethrower) return 'flame';
-      if (sourceInfantry.type === InfantryType.Rocket) return 'rocket';
-      if (sourceInfantry.type === InfantryType.Grenadier) return 'artillery';
-      return 'infantry';
-    }
-
-    const sourceAircraft = this.findClosestAircraft(ev.houseId, ev.fromX, ev.fromY, 1.2);
-    if (sourceAircraft) return 'aircraft';
-
     return 'signal';
   }
 
@@ -563,18 +537,6 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-  private findClosestUnit(houseId: number, cellX: number, cellY: number, maxDistance: number): Unit | null {
-    return closest(this.sim.getUnits(), houseId, cellX, cellY, maxDistance);
-  }
-
-  private findClosestInfantry(houseId: number, cellX: number, cellY: number, maxDistance: number): Infantry | null {
-    return closest(this.sim.getInfantry(), houseId, cellX, cellY, maxDistance);
-  }
-
-  private findClosestAircraft(houseId: number, cellX: number, cellY: number, maxDistance: number): Aircraft | null {
-    return closest(this.sim.getAircraft(), houseId, cellX, cellY, maxDistance);
-  }
-
   private nearestOre(x: number, y: number): OrePatch | null {
     let best: OrePatch | null = null;
     let bestD = Infinity;
@@ -605,33 +567,4 @@ export class GameScene extends Phaser.Scene {
   private colorToCssHex(color: number): string {
     return `#${color.toString(16).padStart(6, '0')}`;
   }
-}
-
-function closest<T extends { houseId: number; x: number; y: number }>(
-  items: T[],
-  houseId: number,
-  cellX: number,
-  cellY: number,
-  maxDistance: number,
-): T | null {
-  let best: T | null = null;
-  let bestD = maxDistance;
-  for (const item of items) {
-    if (item.houseId !== houseId) continue;
-    const d = Math.hypot(item.x - cellX, item.y - cellY);
-    if (d <= bestD) {
-      best = item;
-      bestD = d;
-    }
-  }
-  return best;
-}
-
-function weaponDamageHint(weaponType: string): number {
-  if (weaponType === 'tesla') return 80;
-  if (weaponType === 'artillery') return 70;
-  if (weaponType === 'cannon') return 45;
-  if (weaponType === 'flame') return 30;
-  if (weaponType === 'rocket') return 35;
-  return 12;
 }
