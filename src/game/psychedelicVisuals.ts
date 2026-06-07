@@ -807,8 +807,8 @@ export class BuildingGlyphRenderer extends ConfigurableRenderer {
       y: c.y,
       color: mixColor(profile.primary, 0xff4f79, 0.55),
       age: 0,
-      duration: 300,
-      radius: CELL_SIZE * (0.8 + damageAmount / 80),
+      duration: 220,
+      radius: CELL_SIZE * (0.52 + damageAmount / 110),
       kind: 'damage',
     });
     this.trimBursts();
@@ -825,9 +825,9 @@ export class BuildingGlyphRenderer extends ConfigurableRenderer {
       burst.age += delta;
       const pct = Phaser.Math.Clamp(burst.age / burst.duration, 0, 1);
       const alpha = 1 - pct;
-      const radius = burst.radius * (burst.kind === 'damage' ? 0.35 + pct * 0.5 : 0.2 + pct);
+      const radius = burst.radius * (burst.kind === 'damage' ? 0.24 + pct * 0.34 : 0.2 + pct);
 
-      this.gfx.lineStyle(burst.kind === 'damage' ? 1 : 2, burst.color, alpha * 0.48);
+      this.gfx.lineStyle(burst.kind === 'damage' ? 1 : 2, burst.color, alpha * (burst.kind === 'damage' ? 0.34 : 0.48));
       this.gfx.strokeCircle(burst.x, burst.y, radius);
       if (burst.kind !== 'damage') {
         drawRadialSpokes(this.gfx, burst.x, burst.y, radius * 0.22, radius, 10, time * 0.001, burst.color, alpha * 0.25);
@@ -1099,7 +1099,7 @@ export class UnitGlyphRenderer extends ConfigurableRenderer {
   }
 
   emitUnitDamaged(unit: Unit, damageAmount: number, profile: FactionVisualProfile): void {
-    this.bursts.push({ x: unit.x * CELL_SIZE, y: unit.y * CELL_SIZE, color: mixColor(profile.primary, 0xff5b70, 0.65), age: 0, duration: 240, radius: 10 + damageAmount * 0.4, kind: 'damage' });
+    this.bursts.push({ x: unit.x * CELL_SIZE, y: unit.y * CELL_SIZE, color: mixColor(profile.primary, 0xff5b70, 0.65), age: 0, duration: 200, radius: 7 + damageAmount * 0.24, kind: 'damage' });
     this.trimBursts();
   }
 
@@ -1230,8 +1230,8 @@ export class UnitGlyphRenderer extends ConfigurableRenderer {
       burst.age += delta;
       const pct = Phaser.Math.Clamp(burst.age / burst.duration, 0, 1);
       const alpha = 1 - pct;
-      const radius = burst.radius * (0.25 + pct);
-      this.unitGfx.lineStyle(1, burst.color, alpha * 0.54);
+      const radius = burst.radius * (burst.kind === 'damage' ? 0.2 + pct * 0.38 : 0.25 + pct);
+      this.unitGfx.lineStyle(1, burst.color, alpha * (burst.kind === 'damage' ? 0.36 : 0.54));
       this.unitGfx.strokeCircle(burst.x, burst.y, radius);
       if (burst.kind === 'destroy') {
         drawRadialSpokes(this.unitGfx, burst.x, burst.y, radius * 0.2, radius, 8, time * 0.003, burst.color, alpha * 0.24);
@@ -1306,13 +1306,13 @@ export class CombatEffectsRenderer extends ConfigurableRenderer {
       intensity,
       impactTint,
       age: 0,
-      duration: 320 + intensity * 260,
+      duration: 240 + intensity * 170,
       destroy: false,
     });
     while (this.mandalas.length > this.config.maxActiveMandalas) this.mandalas.shift();
 
-    const count = this.config.quality === 'low' ? 2 : Math.floor(4 + intensity * (this.config.quality === 'high' ? 9 : 5));
-    this.spawnParticles(x, y, profile, count, intensity);
+    const count = this.config.quality === 'low' ? 1 : Math.floor(2 + intensity * (this.config.quality === 'high' ? 5 : 3));
+    this.spawnParticles(x, y, profile, count, intensity, weaponId, impactTint);
   }
 
   emitDestroy(x: number, y: number, profile: FactionVisualProfile, entityType: string): void {
@@ -1328,7 +1328,7 @@ export class CombatEffectsRenderer extends ConfigurableRenderer {
       destroy: true,
     });
     while (this.mandalas.length > this.config.maxActiveMandalas) this.mandalas.shift();
-    this.spawnParticles(x, y, profile, Math.floor(8 + intensity * 8), intensity);
+    this.spawnParticles(x, y, profile, Math.floor(8 + intensity * 8), intensity, 'destroy');
   }
 
   update(_time: number, delta: number): void {
@@ -1353,123 +1353,260 @@ export class CombatEffectsRenderer extends ConfigurableRenderer {
       const pct = Phaser.Math.Clamp(beam.age / beam.duration, 0, 1);
       const alpha = 1 - pct;
       const visual = getWeaponVisual(beam.weaponType);
-      const headPct = visual.beamMode === 'projectile' || visual.beamMode === 'grenade' ? pct : 1;
+      const headPct = visual.beamMode === 'tesla_arc' || visual.beamMode === 'flame_jet' || visual.beamMode === 'infantry_flame' ? 1 : pct;
       const headX = Phaser.Math.Linear(beam.fromX, beam.toX, headPct);
       const headY = Phaser.Math.Linear(beam.fromY, beam.toY, headPct);
 
       switch (visual.beamMode) {
-        case 'projectile':
-        case 'grenade':
-          this.drawProjectileBeam(beam, headX, headY, alpha, visual);
+        case 'pillbox_burst':
+          this.drawBurstTracer(beam, pct, alpha, visual, [-0.9, 0, 0.9], 0.18, 0xfff4d1);
           break;
-        case 'tesla':
-          this.drawJaggedBeam(beam.fromX, beam.fromY, headX, headY, beam.profile, alpha, beam.seed + beam.age * 0.06);
+        case 'turret_cannon':
+          this.drawTurretCannonShot(beam, pct, alpha, visual);
           break;
-        case 'flame':
+        case 'flame_jet':
           this.drawWaveBeam(beam.fromX, beam.fromY, headX, headY, beam.profile, alpha, beam.seed + beam.age * 0.025, true);
+          this.gfx.fillStyle(visual.impactTint ?? 0xffc27a, alpha * 0.7);
+          this.gfx.fillCircle(headX, headY, visual.headSize + 1.2);
           break;
-        case 'rocket':
-          this.drawRocketBeam(beam, headX, headY, alpha, visual);
+        case 'sam_missile':
+          this.drawMissileTrail(beam, pct, alpha, visual, 3.5, 3.2, 0xd5ebff);
           break;
-        case 'tracer':
-          this.drawTracerBeam(beam, headX, headY, alpha, visual);
+        case 'aa_flak':
+          this.drawBurstTracer(beam, pct, alpha, visual, [-2.2, 0, 2.2], 0.14, 0xc9ecff, 0.7);
+          this.drawFlakSpark(beam, pct, alpha, visual);
           break;
-        case 'shell_heavy':
-          this.drawShellBeam(beam, headX, headY, alpha, visual, [-4, 0, 4]);
+        case 'tesla_arc':
+          this.drawJaggedBeam(beam.fromX, beam.fromY, headX, headY, beam.profile, alpha, beam.seed + beam.age * 0.06);
+          this.gfx.fillStyle(0xd3ffff, alpha * 0.78);
+          this.gfx.fillCircle(headX, headY, visual.headSize + 1.1);
           break;
-        case 'shell_medium':
-          this.drawShellBeam(beam, headX, headY, alpha, visual, [0]);
+        case 'tank_light':
+          this.drawTankShot(beam, pct, alpha, visual, 'light');
           break;
-        case 'shell_light':
-          this.drawShellBeam(beam, headX, headY, alpha, visual, [0], true);
+        case 'tank_medium':
+          this.drawTankShot(beam, pct, alpha, visual, 'medium');
           break;
-        case 'burst':
-          this.drawShellBeam(beam, headX, headY, alpha, visual, [-2.5, 2.5]);
+        case 'tank_heavy':
+          this.drawTankShot(beam, pct, alpha, visual, 'heavy');
           break;
-        case 'strafe':
-          this.drawWaveBeam(beam.fromX, beam.fromY, headX, headY, beam.profile, alpha, beam.seed + beam.age * 0.08, false);
+        case 'artillery_lob':
+          this.drawArtilleryLob(beam, pct, alpha, visual);
+          break;
+        case 'apc_autocannon':
+          this.drawBurstTracer(beam, pct, alpha, visual, [-1.4, 1.4], 0.16, 0xffefca);
+          break;
+        case 'rifle_tracer':
+          this.drawBurstTracer(beam, pct, alpha, visual, [0], 0.12, 0xfff4d9);
+          break;
+        case 'grenade_lob':
+          this.drawGrenadeLob(beam, pct, alpha, visual);
+          break;
+        case 'rocket_trail':
+          this.drawMissileTrail(beam, pct, alpha, visual, 5.8, 1.6, visual.impactTint ?? 0xff9a4d);
+          break;
+        case 'infantry_flame':
+          this.drawWaveBeam(beam.fromX, beam.fromY, headX, headY, beam.profile, alpha, beam.seed + beam.age * 0.03, true);
+          this.gfx.fillStyle(0xfff0ab, alpha * 0.72);
+          this.gfx.fillCircle(headX, headY, visual.headSize);
+          break;
+        case 'hind_rocket_pod':
+          this.drawDualRocketPod(beam, pct, alpha, visual);
+          break;
+        case 'longbow_atgm':
+          this.drawLongbowAtgm(beam, pct, alpha, visual);
+          break;
+        case 'mig_strike':
+          this.drawMigStrike(beam, pct, alpha, visual);
+          break;
+        case 'yak_strafe':
+          this.drawBurstTracer(beam, pct, alpha, visual, [-1.7, 1.7], 0.1, 0xffe8ad, 0.45);
           break;
       }
-
-      this.gfx.fillStyle(visual.impactTint ?? 0xffffff, alpha * 0.82);
-      this.gfx.fillCircle(headX, headY, visual.headSize);
       return beam.age < beam.duration;
     });
   }
 
-  private drawProjectileBeam(
+  private drawTankShot(
     beam: BeamEffect,
-    headX: number,
-    headY: number,
+    pct: number,
     alpha: number,
     visual: ReturnType<typeof getWeaponVisual>,
+    className: 'light' | 'medium' | 'heavy',
   ): void {
-    this.gfx.lineStyle(visual.lineWidth, beam.profile.secondary, alpha * 0.22);
-    this.gfx.lineBetween(beam.fromX, beam.fromY, headX, headY);
-    this.gfx.fillStyle(visual.impactTint ?? beam.profile.accent, alpha * 0.82);
-    this.gfx.fillCircle(headX, headY, visual.headSize + Math.sin(beam.age * 0.035) * 1.2);
-    this.gfx.fillStyle(beam.profile.primary, alpha * 0.2);
-    this.gfx.fillCircle(headX, headY, visual.headSize * 2.6);
+    const style =
+      className === 'light'
+        ? { trail: 0.17, arc: 2.2, wobble: 0.9, width: 1.2, glow: 0.22 }
+        : className === 'medium'
+          ? { trail: 0.16, arc: 3.4, wobble: 0.5, width: 1.8, glow: 0.28 }
+          : { trail: 0.14, arc: 4.4, wobble: 0.25, width: 2.6, glow: 0.34 };
+    const tail = this.projectilePoint(beam, Math.max(0, pct - style.trail), style.arc, style.wobble, 5);
+    const head = this.projectilePoint(beam, pct, style.arc, style.wobble, 5);
+    this.gfx.lineStyle(style.width + 2.8, beam.profile.primary, alpha * style.glow);
+    this.gfx.lineBetween(tail.x, tail.y, head.x, head.y);
+    this.gfx.lineStyle(style.width, 0xffffff, alpha * 0.88);
+    this.gfx.lineBetween(tail.x, tail.y, head.x, head.y);
+    this.gfx.fillStyle(visual.impactTint ?? 0xffe4bf, alpha * 0.82);
+    this.gfx.fillCircle(head.x, head.y, visual.headSize + (className === 'heavy' ? 0.8 : 0.3));
+    this.gfx.fillStyle(beam.profile.accent, alpha * (className === 'heavy' ? 0.24 : 0.14));
+    this.gfx.fillCircle(head.x, head.y, visual.headSize * (className === 'light' ? 1.7 : 2.2));
+    if (className === 'heavy') {
+      this.gfx.lineStyle(1, visual.impactTint ?? 0xffd2a1, alpha * 0.56);
+      this.gfx.strokeCircle(head.x, head.y, visual.headSize * 2.2);
+    }
   }
 
-  private drawRocketBeam(
+  private drawTurretCannonShot(beam: BeamEffect, pct: number, alpha: number, visual: ReturnType<typeof getWeaponVisual>): void {
+    const tail = this.projectilePoint(beam, Math.max(0, pct - 0.13), 2.8, 0.3, 4);
+    const head = this.projectilePoint(beam, pct, 2.8, 0.3, 4);
+    this.gfx.lineStyle(visual.lineWidth + 2.6, beam.profile.primary, alpha * 0.24);
+    this.gfx.lineBetween(tail.x, tail.y, head.x, head.y);
+    this.gfx.lineStyle(visual.lineWidth + 0.3, 0xffffff, alpha * 0.86);
+    this.gfx.lineBetween(tail.x, tail.y, head.x, head.y);
+    this.gfx.fillStyle(visual.impactTint ?? 0xffd29a, alpha * 0.82);
+    this.gfx.fillCircle(head.x, head.y, visual.headSize + 0.6);
+  }
+
+  private drawArtilleryLob(beam: BeamEffect, pct: number, alpha: number, visual: ReturnType<typeof getWeaponVisual>): void {
+    const head = this.projectilePoint(beam, pct, 16, 1.6, 4);
+    const tail = this.projectilePoint(beam, Math.max(0, pct - 0.1), 16, 1.6, 4);
+    this.gfx.lineStyle(visual.lineWidth + 4, 0xffaf5e, alpha * 0.22);
+    this.gfx.lineBetween(tail.x, tail.y, head.x, head.y);
+    this.gfx.lineStyle(visual.lineWidth + 1, 0xffffff, alpha * 0.78);
+    this.gfx.lineBetween(tail.x, tail.y, head.x, head.y);
+    this.gfx.fillStyle(visual.impactTint ?? 0xffb869, alpha * 0.84);
+    this.gfx.fillCircle(head.x, head.y, visual.headSize + 1);
+    this.gfx.fillStyle(0xffffff, alpha * 0.55);
+    this.gfx.fillCircle(head.x, head.y, Math.max(1.4, visual.headSize * 0.45));
+  }
+
+  private drawGrenadeLob(beam: BeamEffect, pct: number, alpha: number, visual: ReturnType<typeof getWeaponVisual>): void {
+    const head = this.projectilePoint(beam, pct, 10, 0.9, 3);
+    const tail = this.projectilePoint(beam, Math.max(0, pct - 0.08), 10, 0.9, 3);
+    this.gfx.lineStyle(visual.lineWidth + 1, 0x6fe99a, alpha * 0.18);
+    this.gfx.lineBetween(tail.x, tail.y, head.x, head.y);
+    this.gfx.fillStyle(visual.impactTint ?? 0xffbf7a, alpha * 0.84);
+    this.gfx.fillCircle(head.x, head.y, visual.headSize);
+    this.gfx.lineStyle(1, 0xffffff, alpha * 0.52);
+    this.gfx.strokeCircle(head.x, head.y, visual.headSize + 1.2);
+  }
+
+  private drawMissileTrail(
     beam: BeamEffect,
-    headX: number,
-    headY: number,
+    pct: number,
     alpha: number,
     visual: ReturnType<typeof getWeaponVisual>,
+    arc: number,
+    wobble: number,
+    tint: number,
   ): void {
-    this.gfx.lineStyle(visual.lineWidth + 2, visual.impactTint ?? beam.profile.primary, alpha * 0.14);
-    this.gfx.lineBetween(beam.fromX, beam.fromY, headX, headY);
-    this.gfx.lineStyle(visual.lineWidth, 0xffffff, alpha * 0.78);
-    this.gfx.lineBetween(beam.fromX, beam.fromY, headX, headY);
-    this.gfx.fillStyle(visual.impactTint ?? beam.profile.accent, alpha * 0.35);
-    this.gfx.fillCircle(headX - (headX - beam.fromX) * 0.08, headY - (headY - beam.fromY) * 0.08, visual.headSize * 1.4);
+    const head = this.projectilePoint(beam, pct, arc, wobble, 7);
+    const tail = this.projectilePoint(beam, Math.max(0, pct - 0.2), arc, wobble, 7);
+    this.gfx.lineStyle(visual.lineWidth + 3, tint, alpha * 0.16);
+    this.gfx.lineBetween(tail.x, tail.y, head.x, head.y);
+    this.gfx.lineStyle(visual.lineWidth + 0.4, 0xffffff, alpha * 0.84);
+    this.gfx.lineBetween(tail.x, tail.y, head.x, head.y);
+    this.gfx.fillStyle(tint, alpha * 0.9);
+    this.gfx.fillCircle(head.x, head.y, visual.headSize + 0.6);
+    this.gfx.fillStyle(0xfff6d8, alpha * 0.6);
+    this.gfx.fillCircle(head.x - (head.x - tail.x) * 0.1, head.y - (head.y - tail.y) * 0.1, Math.max(1.8, visual.headSize * 0.6));
   }
 
-  private drawTracerBeam(
-    beam: BeamEffect,
-    headX: number,
-    headY: number,
-    alpha: number,
-    visual: ReturnType<typeof getWeaponVisual>,
-  ): void {
-    this.gfx.lineStyle(visual.lineWidth, visual.impactTint ?? 0xfff0c8, alpha * 0.72);
-    this.gfx.lineBetween(beam.fromX, beam.fromY, headX, headY);
-    this.gfx.lineStyle(1, 0xffffff, alpha * 0.9);
-    this.gfx.lineBetween(beam.fromX, beam.fromY, headX, headY);
+  private drawDualRocketPod(beam: BeamEffect, pct: number, alpha: number, visual: ReturnType<typeof getWeaponVisual>): void {
+    const normal = lineNormal(beam.fromX, beam.fromY, beam.toX, beam.toY);
+    for (const offset of [-2.4, 2.4]) {
+      const head = this.projectilePoint(beam, pct, 3.5, 1.3, 8);
+      const tail = this.projectilePoint(beam, Math.max(0, pct - 0.16), 3.5, 1.3, 8);
+      this.gfx.lineStyle(visual.lineWidth + 2, 0xffa063, alpha * 0.14);
+      this.gfx.lineBetween(tail.x + normal.x * offset, tail.y + normal.y * offset, head.x + normal.x * offset, head.y + normal.y * offset);
+      this.gfx.lineStyle(visual.lineWidth, 0xffffff, alpha * 0.78);
+      this.gfx.lineBetween(tail.x + normal.x * offset, tail.y + normal.y * offset, head.x + normal.x * offset, head.y + normal.y * offset);
+      this.gfx.fillStyle(visual.impactTint ?? 0xff8a4d, alpha * 0.74);
+      this.gfx.fillCircle(head.x + normal.x * offset, head.y + normal.y * offset, visual.headSize * 0.72);
+    }
   }
 
-  private drawShellBeam(
+  private drawLongbowAtgm(beam: BeamEffect, pct: number, alpha: number, visual: ReturnType<typeof getWeaponVisual>): void {
+    const head = this.projectilePoint(beam, pct, 4.6, 4, 10);
+    const tail = this.projectilePoint(beam, Math.max(0, pct - 0.19), 4.6, 4, 10);
+    this.gfx.lineStyle(visual.lineWidth + 2.8, 0x9dffcf, alpha * 0.14);
+    this.gfx.lineBetween(tail.x, tail.y, head.x, head.y);
+    this.gfx.lineStyle(visual.lineWidth + 0.5, 0xffffff, alpha * 0.82);
+    this.gfx.lineBetween(tail.x, tail.y, head.x, head.y);
+    this.gfx.fillStyle(visual.impactTint ?? 0x9dffcf, alpha * 0.82);
+    this.gfx.fillCircle(head.x, head.y, visual.headSize + 0.4);
+    this.gfx.lineStyle(1, 0x9dffcf, alpha * 0.52);
+    this.gfx.strokeCircle(head.x, head.y, visual.headSize * 2);
+  }
+
+  private drawMigStrike(beam: BeamEffect, pct: number, alpha: number, visual: ReturnType<typeof getWeaponVisual>): void {
+    const head = this.projectilePoint(beam, pct, 8.8, 0.3, 3);
+    const tail = this.projectilePoint(beam, Math.max(0, pct - 0.22), 8.8, 0.3, 3);
+    this.gfx.lineStyle(visual.lineWidth + 3.5, 0xff7c5a, alpha * 0.22);
+    this.gfx.lineBetween(tail.x, tail.y, head.x, head.y);
+    this.gfx.lineStyle(visual.lineWidth + 1.2, 0xffffff, alpha * 0.88);
+    this.gfx.lineBetween(tail.x, tail.y, head.x, head.y);
+    this.gfx.fillStyle(visual.impactTint ?? 0xff6b4d, alpha * 0.9);
+    this.gfx.fillCircle(head.x, head.y, visual.headSize + 1.2);
+    this.gfx.fillStyle(0xffffff, alpha * 0.44);
+    this.gfx.fillCircle(head.x, head.y, visual.headSize * 0.5);
+  }
+
+  private drawFlakSpark(beam: BeamEffect, pct: number, alpha: number, visual: ReturnType<typeof getWeaponVisual>): void {
+    const head = this.projectilePoint(beam, pct, 0, 0.9, 8);
+    const radius = visual.headSize * (1.1 + Math.sin(beam.age * 0.04) * 0.16);
+    this.gfx.lineStyle(1, 0xcff5ff, alpha * 0.56);
+    drawRadialSpokes(this.gfx, head.x, head.y, radius * 0.3, radius * 1.4, 6, beam.seed + beam.age * 0.02, 0xdcf8ff, alpha * 0.6);
+  }
+
+  private drawBurstTracer(
     beam: BeamEffect,
-    headX: number,
-    headY: number,
+    pct: number,
     alpha: number,
     visual: ReturnType<typeof getWeaponVisual>,
     offsets: number[],
-    light = false,
+    trailLength: number,
+    color: number,
+    wobble = 0.2,
   ): void {
-    const normal = lineNormal(beam.fromX, beam.fromY, headX, headY);
-    for (let i = 0; i < offsets.length; i++) {
-      const offset = offsets[i];
-      const core = offset === 0;
-      const width = core ? visual.lineWidth : Math.max(1, visual.lineWidth - 1);
-      const glow = light ? alpha * 0.1 : alpha * 0.16;
-      this.gfx.lineStyle(width + (core ? 3 : 1), beam.profile.primary, glow);
+    const normal = lineNormal(beam.fromX, beam.fromY, beam.toX, beam.toY);
+    const head = this.projectilePoint(beam, pct, 0, wobble, 11);
+    const tail = this.projectilePoint(beam, Math.max(0, pct - trailLength), 0, wobble, 11);
+    for (const offset of offsets) {
+      this.gfx.lineStyle(visual.lineWidth + 1.4, color, alpha * 0.2);
       this.gfx.lineBetween(
-        beam.fromX + normal.x * offset,
-        beam.fromY + normal.y * offset,
-        headX + normal.x * offset,
-        headY + normal.y * offset,
+        tail.x + normal.x * offset,
+        tail.y + normal.y * offset,
+        head.x + normal.x * offset,
+        head.y + normal.y * offset,
       );
-      this.gfx.lineStyle(width, core ? 0xffffff : beam.profile.accent, alpha * (core ? 0.88 : 0.42));
+      this.gfx.lineStyle(Math.max(1, visual.lineWidth), 0xffffff, alpha * 0.86);
       this.gfx.lineBetween(
-        beam.fromX + normal.x * offset,
-        beam.fromY + normal.y * offset,
-        headX + normal.x * offset,
-        headY + normal.y * offset,
+        tail.x + normal.x * offset,
+        tail.y + normal.y * offset,
+        head.x + normal.x * offset,
+        head.y + normal.y * offset,
       );
     }
+    this.gfx.fillStyle(color, alpha * 0.76);
+    this.gfx.fillCircle(head.x, head.y, visual.headSize);
+  }
+
+  private projectilePoint(
+    beam: BeamEffect,
+    pct: number,
+    arcHeight: number,
+    wobbleAmplitude: number,
+    wobbleFrequency: number,
+  ): Phaser.Math.Vector2 {
+    const t = Phaser.Math.Clamp(pct, 0, 1);
+    const x = Phaser.Math.Linear(beam.fromX, beam.toX, t);
+    const y = Phaser.Math.Linear(beam.fromY, beam.toY, t);
+    if (arcHeight === 0 && wobbleAmplitude === 0) return new Phaser.Math.Vector2(x, y);
+    const normal = lineNormal(beam.fromX, beam.fromY, beam.toX, beam.toY);
+    const arc = Math.sin(t * Math.PI) * arcHeight;
+    const wobble = Math.sin(beam.seed + t * Math.PI * wobbleFrequency + beam.age * 0.01) * wobbleAmplitude * Math.sin(t * Math.PI);
+    return new Phaser.Math.Vector2(x + normal.x * wobble, y + normal.y * wobble - arc);
   }
 
   private updateMandalas(delta: number): void {
@@ -1477,20 +1614,30 @@ export class CombatEffectsRenderer extends ConfigurableRenderer {
       mandala.age += delta;
       const pct = Phaser.Math.Clamp(mandala.age / mandala.duration, 0, 1);
       const alpha = 1 - pct;
-      const radius = (mandala.destroy ? 18 : 6) + pct * CELL_SIZE * (1.8 + mandala.intensity * 1.2);
-      const rings = this.config.enableCombatMandalas ? (mandala.destroy ? 3 : 2) : 1;
+      const radius = (mandala.destroy ? 18 : 4) + pct * CELL_SIZE * (mandala.destroy ? 1.8 + mandala.intensity * 1.2 : 0.95 + mandala.intensity * 0.68);
+      const rings = this.config.enableCombatMandalas ? (mandala.destroy ? 3 : this.config.quality === 'high' ? 2 : 1) : 1;
 
-      this.gfx.fillStyle(0xffffff, alpha * (mandala.destroy ? 0.18 : 0.1));
-      this.gfx.fillCircle(mandala.x, mandala.y, Math.max(2, 8 * alpha));
+      this.gfx.fillStyle(0xffffff, alpha * (mandala.destroy ? 0.18 : 0.06));
+      this.gfx.fillCircle(mandala.x, mandala.y, Math.max(1.4, (mandala.destroy ? 8 : 6) * alpha));
       for (let i = 0; i < rings; i++) {
-        const r = radius * (1 - i * 0.22);
-        this.gfx.lineStyle(i === 0 ? 2 : 1, i % 2 === 0 ? mandala.profile.primary : mandala.profile.accent, alpha * (0.56 - i * 0.12));
+        const r = radius * (1 - i * 0.2);
+        this.gfx.lineStyle(
+          i === 0 ? (mandala.destroy ? 2 : 1) : 1,
+          i % 2 === 0 ? mandala.profile.primary : mandala.profile.accent,
+          alpha * (mandala.destroy ? 0.56 - i * 0.12 : 0.34 - i * 0.1),
+        );
         this.gfx.strokeCircle(mandala.x, mandala.y, r);
       }
 
       if (this.config.enableCombatMandalas) {
         const visual = getWeaponVisual(mandala.weaponType);
-        const spokes = mandala.destroy ? 14 : visual.beamMode === 'tesla' ? 12 : visual.beamMode === 'rocket' ? 10 : 8;
+        const missileMode =
+          visual.beamMode === 'sam_missile' ||
+          visual.beamMode === 'rocket_trail' ||
+          visual.beamMode === 'hind_rocket_pod' ||
+          visual.beamMode === 'longbow_atgm';
+        const heavyImpact = visual.beamMode === 'tank_heavy' || visual.beamMode === 'artillery_lob' || visual.beamMode === 'mig_strike';
+        const spokes = mandala.destroy ? 14 : visual.beamMode === 'tesla_arc' ? 12 : missileMode ? 10 : heavyImpact ? 9 : 8;
         drawRadialSpokes(
           this.gfx,
           mandala.x,
@@ -1500,7 +1647,7 @@ export class CombatEffectsRenderer extends ConfigurableRenderer {
           spokes,
           mandala.age * 0.004 + mandala.profile.mandalaSeed,
           mandala.impactTint ?? visual.impactTint ?? mandala.profile.secondary,
-          alpha * 0.34,
+          alpha * (mandala.destroy ? 0.34 : 0.2),
         );
       }
 
@@ -1523,7 +1670,29 @@ export class CombatEffectsRenderer extends ConfigurableRenderer {
     });
   }
 
-  private spawnParticles(x: number, y: number, profile: FactionVisualProfile, count: number, intensity: number): void {
+  private spawnParticles(
+    x: number,
+    y: number,
+    profile: FactionVisualProfile,
+    count: number,
+    intensity: number,
+    weaponId: string,
+    impactTint?: number,
+  ): void {
+    const visual = getWeaponVisual(weaponId);
+    const coreColor = impactTint ?? visual.impactTint ?? profile.primary;
+    const altColor =
+      visual.beamMode === 'tesla_arc'
+        ? 0xb8f9ff
+        : visual.beamMode === 'flame_jet' || visual.beamMode === 'infantry_flame'
+          ? 0xffca76
+          : visual.beamMode === 'sam_missile' || visual.beamMode === 'rocket_trail' || visual.beamMode === 'hind_rocket_pod'
+            ? 0xff9d61
+            : visual.beamMode === 'aa_flak'
+              ? 0xd5f2ff
+              : visual.beamMode === 'tank_heavy' || visual.beamMode === 'artillery_lob' || visual.beamMode === 'mig_strike'
+                ? 0xffbb84
+                : profile.secondary;
     for (let i = 0; i < count; i++) {
       if (this.particles.length >= this.config.maxParticles) break;
       const a = Math.random() * Math.PI * 2;
@@ -1533,9 +1702,9 @@ export class CombatEffectsRenderer extends ConfigurableRenderer {
         y,
         vx: Math.cos(a) * speed,
         vy: Math.sin(a) * speed,
-        color: i % 3 === 0 ? 0xffffff : i % 2 === 0 ? profile.primary : profile.secondary,
+        color: i % 4 === 0 ? 0xffffff : i % 2 === 0 ? coreColor : altColor,
         age: 0,
-        duration: 320 + Math.random() * 320,
+        duration: 280 + Math.random() * 340 + intensity * 40,
         size: 1.8 + Math.random() * 3.2,
       });
     }

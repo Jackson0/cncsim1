@@ -16,6 +16,7 @@ import {
   UNIT_DEFS,
   INFANTRY_DEFS,
   AIRCRAFT_DEFS,
+  STRATEGY_DEFS,
   MAP_COLS,
   MAP_ROWS,
 } from '../definitions';
@@ -31,6 +32,7 @@ import {
   type Aircraft,
   type AiPersonality,
   type AiProductionProfile,
+  type AiStrategy,
   type AiTacticMemory,
   type Building,
   type House,
@@ -240,7 +242,16 @@ const TEAM_TEMPLATES: Record<Faction, TeamTemplate[]> = {
 };
 
 const PERSONALITY_ORDER: AiPersonality[] = ['balanced', 'raider', 'armor', 'air', 'turtle', 'opportunist'];
-const DIFFICULTY_ORDER: Difficulty[] = [Difficulty.Normal, Difficulty.Hard, Difficulty.Easy];
+
+/** Per-personality bias toward each strategic opening. */
+const STRATEGY_WEIGHTS: Record<AiPersonality, Partial<Record<AiStrategy, number>>> = {
+  balanced: { balanced: 4, boom: 3, massArmor: 2, turtle: 2, techAir: 2, rush: 1 },
+  raider: { rush: 5, techAir: 2, massArmor: 2, balanced: 1 },
+  armor: { massArmor: 5, boom: 2, balanced: 2, rush: 1 },
+  air: { techAir: 6, boom: 2, balanced: 1 },
+  turtle: { turtle: 5, boom: 3, techAir: 2, balanced: 1 },
+  opportunist: { rush: 3, techAir: 3, massArmor: 2, boom: 2, turtle: 1, balanced: 2 },
+};
 
 export class GameSim {
   tick = 0;
@@ -254,10 +265,44 @@ export class GameSim {
   events: SimEvent[] = [];
   blockedCells = new Set<string>();
   winnerId: number | null = null;
+  /** Seed driving all strategic AI randomness this run; logged for reproducibility. */
+  seed = 0;
+  private rngState = 1;
   private occupancy = new OccupancyTracker();
+
+  /** Seeded mulberry32 PRNG; returns a float in [0, 1). */
+  private rng(): number {
+    this.rngState |= 0;
+    this.rngState = (this.rngState + 0x6d2b79f5) | 0;
+    let t = Math.imul(this.rngState ^ (this.rngState >>> 15), 1 | this.rngState);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  /** Weighted pick over [item, weight] pairs using the seeded RNG. */
+  private weightedPick<T>(entries: Array<{ item: T; weight: number }>): T {
+    const total = entries.reduce((sum, e) => sum + Math.max(0, e.weight), 0);
+    if (total <= 0) return entries[0].item;
+    let pick = this.rng() * total;
+    for (const e of entries) {
+      pick -= Math.max(0, e.weight);
+      if (pick <= 0) return e.item;
+    }
+    return entries[entries.length - 1].item;
+  }
+
+  private pickStrategy(personality: AiPersonality): AiStrategy {
+    const weights = STRATEGY_WEIGHTS[personality];
+    const entries = (Object.entries(weights) as Array<[AiStrategy, number]>).map(
+      ([item, weight]) => ({ item, weight }),
+    );
+    return this.weightedPick(entries);
+  }
 
   init(config: MapSetupConfig = DEFAULT_MAP_SETUP): void {
     resetIds();
+    this.seed = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
+    this.rngState = this.seed || 1;
     this.tick = 0;
     this.houses = [];
     this.buildings = [];
@@ -278,14 +323,25 @@ export class GameSim {
     for (const base of config.bases) {
       const variant = baseCounts[base.faction];
       baseCounts[base.faction] += 1;
+      const personality = this.weightedPick(
+        PERSONALITY_ORDER.map((p) => ({ item: p, weight: 1 })),
+      );
+      const difficulty = this.weightedPick([
+        { item: Difficulty.Normal, weight: 3 },
+        { item: Difficulty.Hard, weight: 2 },
+        { item: Difficulty.Easy, weight: 1 },
+      ]);
       const house = this.createHouse(
         base.name,
         base.faction,
         getFactionColorVariant(base.faction, variant),
         config.startingCredits,
-        PERSONALITY_ORDER[(this.houses.length + variant) % PERSONALITY_ORDER.length],
-        DIFFICULTY_ORDER[this.houses.length % DIFFICULTY_ORDER.length],
+        personality,
+        difficulty,
       );
+      house.aiStrategy = this.pickStrategy(personality);
+      house.aiProductionProfile = STRATEGY_DEFS[house.aiStrategy].preferredProfile;
+      house.aiActiveTactic = STRATEGY_DEFS[house.aiStrategy].label;
       this.spawnMCV(house.id, base.cellX, base.cellY);
       house.centerX = base.cellX;
       house.centerY = base.cellY;
@@ -347,6 +403,8 @@ export class GameSim {
       pendingStructure: StructType.None,
       aiPersonality: personality,
       aiProductionProfile: personality === 'air' ? 'air' : personality === 'armor' ? 'armor' : 'economy',
+      aiStrategy: 'balanced',
+      aiStrategySwitched: false,
       aiActiveTactic: 'Buildup',
       aiTemplateId: null,
       aiTemplateUntilTick: 0,
@@ -634,6 +692,10 @@ export class GameSim {
 
     if (template.personalities?.includes(house.aiPersonality)) weight += 12;
     if (template.profile === house.aiProductionProfile) weight += 8;
+    if (template.profile === STRATEGY_DEFS[house.aiStrategy].preferredProfile) weight += 14;
+    if (house.aiStrategy === 'techAir' && template.profile === 'air') weight += 22;
+    if (house.aiStrategy === 'massArmor' && template.profile === 'armor') weight += 16;
+    if (house.aiStrategy === 'rush' && (template.quarry === 'harvesters' || template.quarry === 'power')) weight += 12;
     if (house.aiPanicUntilTick > this.tick && template.profile !== 'economy') weight += 18;
     if (enemy) {
       if (template.quarry === 'harvesters' && enemy.harvesters >= 2) weight += 20;
@@ -679,6 +741,7 @@ export class GameSim {
     if (own.refineries === 0 || own.harvesters === 0 || house.credits < 400) return 'economy';
     if (enemy && enemy.buildings <= 4 && own.combatUnits >= 6) return 'finisher';
     if (house.aiPanicUntilTick > this.tick && own.vehicles >= 2) return 'armor';
+    if (house.aiStrategy === 'techAir' && own.helipads + own.airstrips > 0) return 'air';
     if (template.profile === 'air' && own.helipads + own.airstrips > 0) return 'air';
     if (template.profile === 'siege' && own.factories > 0) return 'siege';
     if (house.aiPersonality === 'armor') return 'armor';
@@ -781,7 +844,10 @@ export class GameSim {
     );
     if (!constYard) return;
 
-    const spot = this.findBuildLocation(house.id, def.width, def.height);
+    // Defensive structures lean toward the enemy approach so turtle bases form
+    // a visible wall facing the threat instead of clumping at the core.
+    const isDefensive = (def.weaponDamage ?? 0) > 0;
+    const spot = this.findBuildLocation(house.id, def.width, def.height, isDefensive);
     if (!spot) {
       house.pendingStructure = StructType.None;
       return;
@@ -817,12 +883,30 @@ export class GameSim {
     this.rebuildBlocked();
   }
 
-  findBuildLocation(houseId: number, w: number, h: number): { x: number; y: number } | null {
+  findBuildLocation(
+    houseId: number,
+    w: number,
+    h: number,
+    biasTowardEnemy = false,
+  ): { x: number; y: number } | null {
     const house = this.getHouse(houseId);
     if (!house) return null;
 
     const cx = Math.floor(house.centerX);
     const cy = Math.floor(house.centerY);
+
+    // Unit vector pointing from this base toward its enemy (or current target).
+    let ex = 0;
+    let ey = 0;
+    const enemy = house.enemyId !== null ? this.getHouse(house.enemyId) : null;
+    if (biasTowardEnemy && enemy) {
+      const ddx = enemy.centerX - cx;
+      const ddy = enemy.centerY - cy;
+      const mag = Math.hypot(ddx, ddy) || 1;
+      ex = ddx / mag;
+      ey = ddy / mag;
+    }
+
     const candidates: { x: number; y: number; score: number }[] = [];
 
     for (let dy = -12; dy <= 12; dy++) {
@@ -830,7 +914,10 @@ export class GameSim {
         const x = cx + dx;
         const y = cy + dy;
         if (this.canPlaceBuilding(x, y, w, h)) {
-          const score = -dist(x, y, cx, cy) + Math.random() * 2;
+          // Reward cells projected along the enemy direction so defenses ring
+          // the threatened edge of the base.
+          const forward = biasTowardEnemy ? (dx * ex + dy * ey) * 0.9 : 0;
+          const score = -dist(x, y, cx, cy) + forward + this.rng() * 2;
           candidates.push({ x, y, score });
         }
       }
@@ -2056,6 +2143,17 @@ export class GameSim {
       house.aiTemplateUntilTick = 0;
       house.teamTimer = 0;
       house.attackTimer = 0;
+
+      // One-time strategic pivot under sustained pressure: a fragile rush/boom
+      // hardens up, a healthy base presses the advantage with armor.
+      if (!house.aiStrategySwitched && majorStructure) {
+        house.aiStrategySwitched = true;
+        const ownBuildings = this.countBuildings(house.id);
+        const pivot: AiStrategy = ownBuildings <= 4 ? 'turtle' : 'massArmor';
+        if (house.aiStrategy !== pivot && this.rng() < 0.6) {
+          house.aiStrategy = pivot;
+        }
+      }
     }
   }
 

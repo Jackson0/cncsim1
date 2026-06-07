@@ -78,6 +78,7 @@ interface DebugHouseSnapshot {
   attackUnits: number;
   enemyBuildingsRemaining: number;
   personality: string;
+  strategy: string;
   productionProfile: string;
   activeTactic: string;
   score: number;
@@ -91,6 +92,7 @@ interface DebugTimelineSnapshot {
 export interface DebugRunReport {
   run: {
     generatedAt: string;
+    seed: number;
     maxTicks: number;
     ticksPerFrame: number;
     snapshotIntervalTicks: number;
@@ -173,6 +175,7 @@ export class DebugTelemetry {
     return {
       run: {
         generatedAt: new Date().toISOString(),
+        seed: sim.seed,
         maxTicks: this.maxTicks,
         ticksPerFrame: this.ticksPerFrame,
         snapshotIntervalTicks: SNAPSHOT_INTERVAL_TICKS,
@@ -347,6 +350,7 @@ export class DebugTelemetry {
       attackUnits,
       enemyBuildingsRemaining,
       personality: house.aiPersonality,
+      strategy: house.aiStrategy,
       productionProfile: house.aiProductionProfile,
       activeTactic: house.aiActiveTactic,
       score: this.scoreHouse(sim, house),

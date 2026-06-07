@@ -54,6 +54,42 @@ export const RULES = {
   repairDelayMax: TICKS_PER_SECOND * 60,
 } as const;
 
+/**
+ * Strategic openings the AI commits to at game start. Each reshapes the build
+ * cascade, economy size, tech/air priority, and attack aggression so that runs
+ * diverge instead of following one fixed formula.
+ */
+export type AiStrategyKey = 'rush' | 'boom' | 'turtle' | 'techAir' | 'massArmor' | 'balanced';
+
+export interface StrategyDef {
+  /** Display label surfaced in telemetry. */
+  label: string;
+  /** Multiplies RULES.refineryRatio; >1 expands economy (boom), <1 stays lean (rush). */
+  refineryRatioMult: number;
+  /** Hard cap override for refineries. */
+  refineryLimit: number;
+  /** Multiplies the effective defense ratio. */
+  defenseRatioMult: number;
+  /** Urgency assigned to defensive structures. */
+  defenseUrgency: Urgency;
+  /** Urgency assigned to the Tech Center. */
+  techUrgency: Urgency;
+  /** Urgency assigned to air production buildings (helipad / airstrip). */
+  airUrgency: Urgency;
+  /** Whether this strategy actively wants an air force. */
+  wantsAir: boolean;
+  /** Desired number of air production buildings when wantsAir. */
+  airFactoryTarget: number;
+  /** How many completed buildings before the AI commits to a War Factory (rush = early). */
+  warFactoryAfterBuildings: number;
+  /** Multiplies the army size required before launching an attack. */
+  attackArmyMult: number;
+  /** Multiplies the delay between attack waves (>1 = more patient). */
+  attackIntervalMult: number;
+  /** Production profile this strategy biases toward. */
+  preferredProfile: 'economy' | 'infantry' | 'armor' | 'siege' | 'air' | 'finisher';
+}
+
 export enum Faction {
   Allies = 0,
   Soviets = 1,
@@ -72,6 +108,99 @@ export enum Urgency {
   High = 3,
   Critical = 4,
 }
+
+export const STRATEGY_DEFS: Record<AiStrategyKey, StrategyDef> = {
+  rush: {
+    label: 'Rush',
+    refineryRatioMult: 0.7,
+    refineryLimit: 2,
+    defenseRatioMult: 0.25,
+    defenseUrgency: Urgency.Low,
+    techUrgency: Urgency.Low,
+    airUrgency: Urgency.Low,
+    wantsAir: false,
+    airFactoryTarget: 0,
+    warFactoryAfterBuildings: 2,
+    attackArmyMult: 0.45,
+    attackIntervalMult: 0.55,
+    preferredProfile: 'infantry',
+  },
+  boom: {
+    label: 'Boom Economy',
+    refineryRatioMult: 1.6,
+    refineryLimit: 4,
+    defenseRatioMult: 0.9,
+    defenseUrgency: Urgency.Medium,
+    techUrgency: Urgency.Medium,
+    airUrgency: Urgency.Low,
+    wantsAir: false,
+    airFactoryTarget: 0,
+    warFactoryAfterBuildings: 5,
+    attackArmyMult: 1.5,
+    attackIntervalMult: 1.4,
+    preferredProfile: 'armor',
+  },
+  turtle: {
+    label: 'Turtle',
+    refineryRatioMult: 1.15,
+    refineryLimit: 3,
+    defenseRatioMult: 1.9,
+    defenseUrgency: Urgency.High,
+    techUrgency: Urgency.Medium,
+    airUrgency: Urgency.Low,
+    wantsAir: false,
+    airFactoryTarget: 0,
+    warFactoryAfterBuildings: 4,
+    attackArmyMult: 1.8,
+    attackIntervalMult: 1.6,
+    preferredProfile: 'siege',
+  },
+  techAir: {
+    label: 'Tech Air',
+    refineryRatioMult: 1.8,
+    refineryLimit: 3,
+    defenseRatioMult: 1.1,
+    defenseUrgency: Urgency.Medium,
+    techUrgency: Urgency.High,
+    airUrgency: Urgency.High,
+    wantsAir: true,
+    airFactoryTarget: 2,
+    warFactoryAfterBuildings: 4,
+    attackArmyMult: 1.2,
+    attackIntervalMult: 0.9,
+    preferredProfile: 'air',
+  },
+  massArmor: {
+    label: 'Mass Armor',
+    refineryRatioMult: 1.3,
+    refineryLimit: 3,
+    defenseRatioMult: 0.7,
+    defenseUrgency: Urgency.Medium,
+    techUrgency: Urgency.Medium,
+    airUrgency: Urgency.Low,
+    wantsAir: false,
+    airFactoryTarget: 0,
+    warFactoryAfterBuildings: 3,
+    attackArmyMult: 1.25,
+    attackIntervalMult: 1.0,
+    preferredProfile: 'armor',
+  },
+  balanced: {
+    label: 'Balanced',
+    refineryRatioMult: 1.0,
+    refineryLimit: 4,
+    defenseRatioMult: 1.0,
+    defenseUrgency: Urgency.Medium,
+    techUrgency: Urgency.Medium,
+    airUrgency: Urgency.Medium,
+    wantsAir: false,
+    airFactoryTarget: 1,
+    warFactoryAfterBuildings: 3,
+    attackArmyMult: 1.0,
+    attackIntervalMult: 1.0,
+    preferredProfile: 'armor',
+  },
+};
 
 export enum HouseState {
   Buildup = 0,

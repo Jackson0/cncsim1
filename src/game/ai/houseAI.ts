@@ -14,6 +14,7 @@ import {
   UnitType,
   Urgency,
   STRUCT_DEFS,
+  STRATEGY_DEFS,
   UNIT_DEFS,
   INFANTRY_DEFS,
   AIRCRAFT_DEFS,
@@ -56,6 +57,27 @@ function hasWarFactory(h: House): boolean {
 
 function hasTech(h: House): boolean {
   return (h.quantities[StructType.Tech] ?? 0) > 0;
+}
+
+function wantsAirInfra(house: House): boolean {
+  return STRATEGY_DEFS[house.aiStrategy].wantsAir || house.aiPersonality === 'air';
+}
+
+/**
+ * Credits an air-seeking house should keep in reserve so ground production does
+ * not starve its tech path: first the Tech Center + air pad, then each aircraft
+ * up to one per pad. Returns 0 once the air force is established.
+ */
+function airCreditReserve(sim: GameSim, house: House): number {
+  if (!wantsAirInfra(house)) return 0;
+  const pads = (house.quantities[StructType.Helipad] ?? 0) + (house.quantities[StructType.Airstrip] ?? 0);
+  // Keep the reserve above structure cost (2000) so credits actually accumulate
+  // toward the refinery/war-factory/tech path instead of leaking into tanks.
+  if ((house.quantities[StructType.Tech] ?? 0) < 1 || pads < 1) return 2100;
+  // Guarantee at least one aircraft takes to the field, then let ground
+  // production resume and top up the air force opportunistically.
+  if (sim.countAircraft(house.id) < 1) return 2000;
+  return 0;
 }
 
 function powerFraction(house: House): number {
@@ -104,6 +126,7 @@ export function aiBuilding(sim: GameSim, house: House): void {
   if (!house.isBaseBuilding) return;
   if (sim.hasStructureUnderConstruction(house.id)) return;
 
+  const strat = STRATEGY_DEFS[house.aiStrategy];
   const money = availableMoney(house);
   const hasInc = hasIncome(sim, house);
   const curBuildings = sim.countBuildings(house.id);
@@ -131,11 +154,14 @@ export function aiBuilding(sim: GameSim, house: House): void {
   addPower(StructType.Power);
 
   const refCount = house.quantities[StructType.Refinery] ?? 0;
-  if (!sim.isTiberiumShort(house.id) && refCount < roundUp(RULES.refineryRatio, curBuildings) && refCount < RULES.refineryLimit) {
+  const refineryRatio = RULES.refineryRatio * strat.refineryRatioMult;
+  if (!sim.isTiberiumShort(house.id) && refCount < roundUp(refineryRatio, curBuildings) && refCount < strat.refineryLimit) {
     const def = STRUCT_DEFS[StructType.Refinery];
     if (canBuildStructure(sim, house, StructType.Refinery) && (money > def.cost || hasInc)) {
+      const wantsStrongEconomy =
+        strat.preferredProfile === 'economy' || house.aiStrategy === 'boom';
       choices.push({
-        urgency: refCount === 0 ? Urgency.High : Urgency.Medium,
+        urgency: refCount === 0 || wantsStrongEconomy ? Urgency.High : Urgency.Medium,
         structure: StructType.Refinery,
       });
     }
@@ -154,12 +180,12 @@ export function aiBuilding(sim: GameSim, house: House): void {
   }
 
   const warCount = house.quantities[StructType.WarFactory] ?? 0;
-  if (warCount < 1 && hasBarracks(house)) {
+  if (warCount < 1 && hasBarracks(house) && curBuildings >= strat.warFactoryAfterBuildings) {
     const def = STRUCT_DEFS[StructType.WarFactory];
     if (canBuildStructure(sim, house, StructType.WarFactory) && money >= def.cost) {
       choices.push({ urgency: Urgency.Critical, structure: StructType.WarFactory });
     }
-  } else if (warCount < roundUp(RULES.warRatio, curBuildings) && warCount < RULES.warLimit && (money > 2000 || hasInc)) {
+  } else if (warCount >= 1 && warCount < roundUp(RULES.warRatio, curBuildings) && warCount < RULES.warLimit && (money > 2000 || hasInc)) {
     const def = STRUCT_DEFS[StructType.WarFactory];
     if (canBuildStructure(sim, house, StructType.WarFactory) && (def.cost < money || hasInc)) {
       choices.push({
@@ -175,6 +201,7 @@ export function aiBuilding(sim: GameSim, house: House): void {
     (house.quantities[StructType.FlameTurret] ?? 0);
   const defenseRatio =
     RULES.defenseRatio *
+    strat.defenseRatioMult *
     (house.aiPersonality === 'turtle' ? 1.35 : house.aiPersonality === 'raider' ? 0.8 : 1);
   if (hasWarFactory(house) && defCount < roundUp(defenseRatio, curBuildings) && defCount < RULES.defenseLimit) {
     const vehicleThreat = enemyProfile ? enemyProfile.vehicles + enemyProfile.aircraft : 0;
@@ -193,7 +220,7 @@ export function aiBuilding(sim: GameSim, house: House): void {
     for (const t of types) {
       const def = STRUCT_DEFS[t];
       if (canBuildStructure(sim, house, t) && (def.cost < money || hasInc)) {
-        choices.push({ urgency: Urgency.Medium, structure: t });
+        choices.push({ urgency: strat.defenseUrgency, structure: t });
         break;
       }
     }
@@ -227,22 +254,27 @@ export function aiBuilding(sim: GameSim, house: House): void {
   if ((house.quantities[StructType.Tech] ?? 0) < 1 && powerFraction(house) >= 1) {
     const def = STRUCT_DEFS[StructType.Tech];
     if (canBuildStructure(sim, house, StructType.Tech) && (def.cost < money || hasInc)) {
-      choices.push({ urgency: Urgency.Medium, structure: StructType.Tech });
+      choices.push({ urgency: strat.techUrgency, structure: StructType.Tech });
     }
   }
 
-  if (hasTech(house)) {
-    const airFactories = [
-      { type: StructType.Helipad, ratio: RULES.helipadRatio, limit: RULES.helipadLimit },
-      { type: StructType.Airstrip, ratio: RULES.airstripRatio, limit: RULES.airstripLimit },
-    ];
-    for (const { type: padType, ratio: padRatio, limit: padLimit } of airFactories) {
-      const padCount = house.quantities[padType] ?? 0;
-      if (padCount >= roundUp(padRatio, curBuildings) || padCount >= padLimit) continue;
-
-      const def = STRUCT_DEFS[padType];
-      if (canBuildStructure(sim, house, padType) && (def.cost < money || hasInc)) {
-        choices.push({ urgency: Urgency.Medium, structure: padType });
+  const wantsAir = strat.wantsAir || house.aiPersonality === 'air';
+  if (hasTech(house) && wantsAir) {
+    const currentPads =
+      (house.quantities[StructType.Helipad] ?? 0) + (house.quantities[StructType.Airstrip] ?? 0);
+    const padTarget = Math.max(1, strat.airFactoryTarget);
+    if (currentPads < padTarget) {
+      // Soviets favour the airstrip (jets); both factions can field helipads.
+      const airFactories =
+        house.faction === Faction.Soviets
+          ? [StructType.Airstrip, StructType.Helipad]
+          : [StructType.Helipad];
+      for (const padType of airFactories) {
+        const def = STRUCT_DEFS[padType];
+        if (canBuildStructure(sim, house, padType) && (def.cost < money || hasInc)) {
+          choices.push({ urgency: strat.airUrgency, structure: padType });
+          break;
+        }
       }
     }
   }
@@ -266,17 +298,24 @@ export function aiUnit(sim: GameSim, house: House): void {
   const harvesters = sim.countUnitsOfType(house.id, UnitType.Harvester);
   const refineries = house.quantities[StructType.Refinery] ?? 0;
 
+  // Two harvesters per refinery keeps the economy strong enough to actually
+  // reach the tech/air tier, and puts more harvesters on the field to watch.
   if (
     house.iq >= RULES.iqHarvester &&
-    (house.difficulty !== Difficulty.Hard || house.aiProductionProfile === 'economy') &&
+    (house.difficulty !== Difficulty.Hard || house.aiProductionProfile === 'economy' || wantsAirInfra(house)) &&
     !sim.isTiberiumShort(house.id) &&
-    refineries > harvesters
+    harvesters < refineries * 2
   ) {
     house.buildUnit = UnitType.Harvester;
     return;
   }
 
   if (!house.isBaseBuilding) return;
+
+  // Air-focused houses bank credits so the Tech Center, air pad, and aircraft
+  // get funded before the war chest is drained on ground units.
+  if (house.credits < airCreditReserve(sim, house)) return;
+
   const enemy = house.enemyId !== null ? sim.getHouse(house.enemyId) : null;
   const enemyProfile = enemy ? sim.getHouseCombatProfile(enemy.id) : null;
 
@@ -318,6 +357,18 @@ export function aiUnit(sim: GameSim, house: House): void {
       if (t === UnitType.Apc) w += 6;
     }
 
+    if (house.aiStrategy === 'massArmor') {
+      if (t === UnitType.HeavyTank || t === UnitType.MediumTank) w += 18;
+      if (t === UnitType.LightTank) w += 6;
+    } else if (house.aiStrategy === 'rush') {
+      if (t === UnitType.LightTank || t === UnitType.Apc) w += 12;
+    } else if (house.aiStrategy === 'turtle') {
+      if (t === UnitType.Artillery) w += 14;
+      if (t === UnitType.MediumTank || t === UnitType.HeavyTank) w += 4;
+    } else if (house.aiStrategy === 'boom') {
+      if (t === UnitType.MediumTank || t === UnitType.HeavyTank) w += 10;
+    }
+
     if (enemyProfile) {
       if (enemyProfile.heavyVehicles > enemyProfile.lightVehicles + enemyProfile.infantry) {
         if (t === UnitType.Artillery) w += 18;
@@ -356,6 +407,9 @@ export function aiInfantry(sim: GameSim, house: House): void {
   if (!house.isBaseBuilding) return;
 
   if (!hasWarFactory(house) && house.credits < RULES.infantryReserve) return;
+
+  // Bank toward the Tech Center / air pad / aircraft before spending on infantry.
+  if (house.credits < airCreditReserve(sim, house)) return;
 
   const enemy = house.enemyId !== null ? sim.getHouse(house.enemyId) : null;
   const enemyProfile = enemy ? sim.getHouseCombatProfile(enemy.id) : null;
@@ -396,6 +450,14 @@ export function aiInfantry(sim: GameSim, house: House): void {
       if (type === InfantryType.Rocket) nextW += 4;
     } else if (house.aiProductionProfile === 'finisher') {
       if (type !== InfantryType.Engineer) nextW += 3;
+    }
+    if (house.aiStrategy === 'rush') {
+      if (type === InfantryType.Rifle) nextW += 6;
+      if (type === InfantryType.Flamethrower || type === InfantryType.Grenadier) nextW += 3;
+    } else if (house.aiStrategy === 'turtle') {
+      if (type === InfantryType.Rocket) nextW += 5;
+    } else if (house.aiStrategy === 'techAir') {
+      if (type === InfantryType.Rocket) nextW += 3;
     }
     if (enemyProfile && enemyProfile.vehicles > enemyProfile.infantry && type === InfantryType.Rocket) nextW += 4;
 
@@ -587,18 +649,24 @@ function aiLowerPower(sim: GameSim, house: House): void {
 
 /** HOUSE.CPP AI_Attack */
 function aiAttack(sim: GameSim, house: House): void {
+  const strat = STRATEGY_DEFS[house.aiStrategy];
   const forced = sim.countBuildings(house.id) === 0;
   const panic = house.aiPanicUntilTick > sim.tick;
   const armedCount =
     armedGroundCount(sim, house) +
     sim.getAircraft().filter((a) => a.houseId === house.id && a.hp > 0).length;
+  const baseThreshold = Math.min(
+    4 + Math.floor(sim.tick / (TICKS_PER_SECOND * 120)),
+    house.difficulty === Difficulty.Hard ? 12 : 10,
+  );
   const minForAttack = forced || panic
     ? 1
-    : Math.min(4 + Math.floor(sim.tick / (TICKS_PER_SECOND * 120)), house.difficulty === Difficulty.Hard ? 12 : 10);
+    : Math.max(1, Math.round(baseThreshold * strat.attackArmyMult));
   const interval =
     RULES.attackInterval *
     TICKS_PER_SECOND *
     difficultyAttackScale(house.difficulty) *
+    strat.attackIntervalMult *
     (0.5 + Math.random());
 
   if (!forced && armedCount < minForAttack) {

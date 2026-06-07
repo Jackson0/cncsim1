@@ -112,6 +112,7 @@ export type TeamQuarry =
 
 export type AiPersonality = 'raider' | 'turtle' | 'armor' | 'air' | 'balanced' | 'opportunist';
 export type AiProductionProfile = 'economy' | 'infantry' | 'armor' | 'siege' | 'air' | 'finisher';
+export type AiStrategy = 'rush' | 'boom' | 'turtle' | 'techAir' | 'massArmor' | 'balanced';
 
 export interface AiTacticMemory {
   id: string;
@@ -173,6 +174,8 @@ export interface House {
   pendingStructure: StructType;
   aiPersonality: AiPersonality;
   aiProductionProfile: AiProductionProfile;
+  aiStrategy: AiStrategy;
+  aiStrategySwitched: boolean;
   aiActiveTactic: string;
   aiTemplateId: string | null;
   aiTemplateUntilTick: number;

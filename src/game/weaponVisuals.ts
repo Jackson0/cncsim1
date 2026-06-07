@@ -6,17 +6,25 @@ import {
 } from './definitions';
 
 export type WeaponBeamMode =
-  | 'tesla'
-  | 'flame'
-  | 'projectile'
-  | 'grenade'
-  | 'rocket'
-  | 'tracer'
-  | 'shell_light'
-  | 'shell_medium'
-  | 'shell_heavy'
-  | 'burst'
-  | 'strafe';
+  | 'pillbox_burst'
+  | 'turret_cannon'
+  | 'flame_jet'
+  | 'sam_missile'
+  | 'aa_flak'
+  | 'tesla_arc'
+  | 'tank_light'
+  | 'tank_medium'
+  | 'tank_heavy'
+  | 'artillery_lob'
+  | 'apc_autocannon'
+  | 'rifle_tracer'
+  | 'grenade_lob'
+  | 'rocket_trail'
+  | 'infantry_flame'
+  | 'hind_rocket_pod'
+  | 'longbow_atgm'
+  | 'mig_strike'
+  | 'yak_strafe';
 
 export interface WeaponVisualDef {
   id: string;
@@ -31,25 +39,26 @@ export interface WeaponVisualDef {
 const WEAPON_VISUALS: Record<string, WeaponVisualDef> = {
   [StructType.Pillbox]: {
     id: StructType.Pillbox,
-    beamMode: 'tracer',
-    duration: 110,
-    intensity: 0.68,
+    beamMode: 'pillbox_burst',
+    duration: 90,
+    intensity: 0.72,
     lineWidth: 1,
-    headSize: 1.6,
+    headSize: 1.4,
     impactTint: 0xfff0c8,
   },
   [StructType.Turret]: {
     id: StructType.Turret,
-    beamMode: 'shell_medium',
-    duration: 205,
-    intensity: 1.22,
+    beamMode: 'turret_cannon',
+    duration: 210,
+    intensity: 1.26,
     lineWidth: 2,
-    headSize: 2.8,
+    headSize: 3,
+    impactTint: 0xffd29a,
   },
   [StructType.FlameTurret]: {
     id: StructType.FlameTurret,
-    beamMode: 'flame',
-    duration: 210,
+    beamMode: 'flame_jet',
+    duration: 200,
     intensity: 1.55,
     lineWidth: 3,
     headSize: 3.2,
@@ -57,7 +66,7 @@ const WEAPON_VISUALS: Record<string, WeaponVisualDef> = {
   },
   [StructType.Sam]: {
     id: StructType.Sam,
-    beamMode: 'rocket',
+    beamMode: 'sam_missile',
     duration: 290,
     intensity: 1.48,
     lineWidth: 2,
@@ -66,16 +75,16 @@ const WEAPON_VISUALS: Record<string, WeaponVisualDef> = {
   },
   [StructType.AaGun]: {
     id: StructType.AaGun,
-    beamMode: 'burst',
+    beamMode: 'aa_flak',
     duration: 175,
     intensity: 1.18,
-    lineWidth: 1.5,
+    lineWidth: 1.4,
     headSize: 2.2,
-    impactTint: 0xfff2a6,
+    impactTint: 0xd8f2ff,
   },
   [StructType.Tesla]: {
     id: StructType.Tesla,
-    beamMode: 'tesla',
+    beamMode: 'tesla_arc',
     duration: 260,
     intensity: 2.1,
     lineWidth: 2,
@@ -84,31 +93,34 @@ const WEAPON_VISUALS: Record<string, WeaponVisualDef> = {
   },
   [UnitType.LightTank]: {
     id: UnitType.LightTank,
-    beamMode: 'shell_light',
-    duration: 165,
+    beamMode: 'tank_light',
+    duration: 155,
     intensity: 1.02,
-    lineWidth: 1.5,
-    headSize: 2.2,
+    lineWidth: 1.4,
+    headSize: 2.1,
+    impactTint: 0xfff0cf,
   },
   [UnitType.MediumTank]: {
     id: UnitType.MediumTank,
-    beamMode: 'shell_medium',
+    beamMode: 'tank_medium',
     duration: 195,
     intensity: 1.18,
     lineWidth: 2,
     headSize: 2.6,
+    impactTint: 0xffddb3,
   },
   [UnitType.HeavyTank]: {
     id: UnitType.HeavyTank,
-    beamMode: 'shell_heavy',
+    beamMode: 'tank_heavy',
     duration: 235,
     intensity: 1.52,
-    lineWidth: 3,
+    lineWidth: 2.8,
     headSize: 3.4,
+    impactTint: 0xffc18a,
   },
   [UnitType.Artillery]: {
     id: UnitType.Artillery,
-    beamMode: 'projectile',
+    beamMode: 'artillery_lob',
     duration: 520,
     intensity: 1.9,
     lineWidth: 2,
@@ -117,15 +129,16 @@ const WEAPON_VISUALS: Record<string, WeaponVisualDef> = {
   },
   [UnitType.Apc]: {
     id: UnitType.Apc,
-    beamMode: 'tracer',
-    duration: 145,
+    beamMode: 'apc_autocannon',
+    duration: 130,
     intensity: 0.82,
     lineWidth: 1,
-    headSize: 1.8,
+    headSize: 1.6,
+    impactTint: 0xfff4db,
   },
   [InfantryType.Rifle]: {
     id: InfantryType.Rifle,
-    beamMode: 'tracer',
+    beamMode: 'rifle_tracer',
     duration: 95,
     intensity: 0.62,
     lineWidth: 1,
@@ -134,7 +147,7 @@ const WEAPON_VISUALS: Record<string, WeaponVisualDef> = {
   },
   [InfantryType.Grenadier]: {
     id: InfantryType.Grenadier,
-    beamMode: 'grenade',
+    beamMode: 'grenade_lob',
     duration: 360,
     intensity: 1.35,
     lineWidth: 2,
@@ -143,7 +156,7 @@ const WEAPON_VISUALS: Record<string, WeaponVisualDef> = {
   },
   [InfantryType.Rocket]: {
     id: InfantryType.Rocket,
-    beamMode: 'rocket',
+    beamMode: 'rocket_trail',
     duration: 330,
     intensity: 1.38,
     lineWidth: 2.5,
@@ -152,7 +165,7 @@ const WEAPON_VISUALS: Record<string, WeaponVisualDef> = {
   },
   [InfantryType.Flamethrower]: {
     id: InfantryType.Flamethrower,
-    beamMode: 'flame',
+    beamMode: 'infantry_flame',
     duration: 180,
     intensity: 1.48,
     lineWidth: 3,
@@ -161,7 +174,7 @@ const WEAPON_VISUALS: Record<string, WeaponVisualDef> = {
   },
   [AircraftType.Hind]: {
     id: AircraftType.Hind,
-    beamMode: 'rocket',
+    beamMode: 'hind_rocket_pod',
     duration: 250,
     intensity: 1.42,
     lineWidth: 2,
@@ -170,7 +183,7 @@ const WEAPON_VISUALS: Record<string, WeaponVisualDef> = {
   },
   [AircraftType.Longbow]: {
     id: AircraftType.Longbow,
-    beamMode: 'burst',
+    beamMode: 'longbow_atgm',
     duration: 265,
     intensity: 1.46,
     lineWidth: 2,
@@ -179,7 +192,7 @@ const WEAPON_VISUALS: Record<string, WeaponVisualDef> = {
   },
   [AircraftType.Mig]: {
     id: AircraftType.Mig,
-    beamMode: 'projectile',
+    beamMode: 'mig_strike',
     duration: 380,
     intensity: 1.62,
     lineWidth: 2.5,
@@ -188,7 +201,7 @@ const WEAPON_VISUALS: Record<string, WeaponVisualDef> = {
   },
   [AircraftType.Yak]: {
     id: AircraftType.Yak,
-    beamMode: 'strafe',
+    beamMode: 'yak_strafe',
     duration: 140,
     intensity: 0.95,
     lineWidth: 1,
@@ -199,7 +212,7 @@ const WEAPON_VISUALS: Record<string, WeaponVisualDef> = {
 
 const FALLBACK_WEAPON: WeaponVisualDef = {
   id: 'signal',
-  beamMode: 'shell_light',
+  beamMode: 'rifle_tracer',
   duration: 170,
   intensity: 0.75,
   lineWidth: 1.5,
