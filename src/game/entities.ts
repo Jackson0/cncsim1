@@ -110,6 +110,14 @@ export type TeamQuarry =
   | 'defense'
   | 'power';
 
+export type AiPersonality = 'raider' | 'turtle' | 'armor' | 'air' | 'balanced' | 'opportunist';
+export type AiProductionProfile = 'economy' | 'infantry' | 'armor' | 'siege' | 'air' | 'finisher';
+
+export interface AiTacticMemory {
+  id: string;
+  tick: number;
+}
+
 export interface TeamWave {
   id: number;
   houseId: number;
@@ -163,4 +171,14 @@ export interface House {
   maxAircraft: number;
   productionQueues: ProductionQueue[];
   pendingStructure: StructType;
+  aiPersonality: AiPersonality;
+  aiProductionProfile: AiProductionProfile;
+  aiActiveTactic: string;
+  aiTemplateId: string | null;
+  aiTemplateUntilTick: number;
+  aiRecentTactics: AiTacticMemory[];
+  aiLastEnemyScanTick: number;
+  aiLossWindowTick: number;
+  aiRecentLosses: number;
+  aiPanicUntilTick: number;
 }

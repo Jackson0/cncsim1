@@ -190,12 +190,16 @@ export class SetupScene extends Phaser.Scene {
   private setupInputHandlers(): void {
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (!pointer.leftButtonDown()) return;
-      if (pointer.x <= PANEL_W) return;
+      if (this.isPointerOverPanelUi(pointer)) return;
       this.handleMapClick(pointer);
     });
 
     this.input.keyboard?.on('keydown-DELETE', () => this.deleteSelection());
     this.input.keyboard?.on('keydown-BACKSPACE', () => this.deleteSelection());
+  }
+
+  private isPointerOverPanelUi(pointer: Phaser.Input.Pointer): boolean {
+    return this.input.hitTestPointer(pointer).length > 0;
   }
 
   private handleMapClick(pointer: Phaser.Input.Pointer): void {
@@ -511,8 +515,10 @@ export class SetupScene extends Phaser.Scene {
     root.style.color = '#cde1f4';
     root.style.fontFamily = 'Consolas, monospace';
     root.style.fontSize = '12px';
+    root.style.pointerEvents = 'none';
 
     const amountLabel = document.createElement('label');
+    amountLabel.style.pointerEvents = 'auto';
     amountLabel.textContent = 'Ore amount: ';
     amountLabel.style.marginRight = '6px';
 
@@ -523,14 +529,17 @@ export class SetupScene extends Phaser.Scene {
     amountInput.value = String(DEFAULT_ORE_AMOUNT);
     amountInput.style.width = '110px';
     amountInput.style.marginRight = '10px';
+    amountInput.style.pointerEvents = 'auto';
 
     const infiniteLabel = document.createElement('label');
     infiniteLabel.style.display = 'inline-flex';
     infiniteLabel.style.alignItems = 'center';
     infiniteLabel.style.gap = '4px';
+    infiniteLabel.style.pointerEvents = 'auto';
 
     const infiniteInput = document.createElement('input');
     infiniteInput.type = 'checkbox';
+    infiniteInput.style.pointerEvents = 'auto';
     infiniteLabel.append(infiniteInput, document.createTextNode('Infinite'));
 
     root.append(amountLabel, amountInput, infiniteLabel);
@@ -554,8 +563,10 @@ export class SetupScene extends Phaser.Scene {
     root.style.color = '#cde1f4';
     root.style.fontFamily = 'Consolas, monospace';
     root.style.fontSize = '12px';
+    root.style.pointerEvents = 'none';
 
     const label = document.createElement('label');
+    label.style.pointerEvents = 'auto';
     label.textContent = 'Starting credits: ';
     label.style.marginRight = '6px';
 
@@ -565,6 +576,7 @@ export class SetupScene extends Phaser.Scene {
     input.step = '100';
     input.value = String(this.config.startingCredits);
     input.style.width = '110px';
+    input.style.pointerEvents = 'auto';
     input.addEventListener('input', () => {
       this.config.startingCredits = this.getUiStartingCredits();
       this.syncStartState();
@@ -590,19 +602,23 @@ export class SetupScene extends Phaser.Scene {
     root.style.color = '#cde1f4';
     root.style.fontFamily = 'Consolas, monospace';
     root.style.fontSize = '12px';
+    root.style.pointerEvents = 'none';
 
     const label = document.createElement('label');
     label.style.display = 'inline-flex';
     label.style.alignItems = 'center';
     label.style.gap = '6px';
+    label.style.pointerEvents = 'auto';
 
     const input = document.createElement('input');
     input.type = 'checkbox';
+    input.style.pointerEvents = 'auto';
     label.append(input, document.createTextNode('Debug'));
 
     const maxTicksLabel = document.createElement('label');
     maxTicksLabel.style.display = 'block';
     maxTicksLabel.style.marginTop = '8px';
+    maxTicksLabel.style.pointerEvents = 'auto';
     maxTicksLabel.textContent = 'Max ticks: ';
 
     const maxTicksInput = document.createElement('input');
@@ -612,6 +628,7 @@ export class SetupScene extends Phaser.Scene {
     maxTicksInput.value = String(DEFAULT_DEBUG_MAX_TICKS);
     maxTicksInput.style.width = '110px';
     maxTicksInput.style.marginLeft = '6px';
+    maxTicksInput.style.pointerEvents = 'auto';
     maxTicksLabel.append(maxTicksInput);
 
     root.append(label, maxTicksLabel);

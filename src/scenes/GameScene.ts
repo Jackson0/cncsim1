@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import {
   AIRCRAFT_DEFS,
   CELL_SIZE,
+  Difficulty,
   HARVESTER_CAPACITY,
   INFANTRY_DEFS,
   InfantryType,
@@ -422,7 +423,9 @@ export class GameScene extends Phaser.Scene {
       const inf = this.sim.countInfantry(h.id);
       const air = this.sim.countAircraft(h.id);
       const status = h.isDefeated ? ' DEFEATED' : '';
-      return `${h.name}${status}  $${h.credits}  PWR:${pwr}  B:${bld} U:${unt} I:${inf} A:${air}`;
+      const difficulty = Difficulty[h.difficulty];
+      const tactic = h.aiActiveTactic || 'Buildup';
+      return `${h.name}${status}  $${h.credits}  PWR:${pwr}  B:${bld} U:${unt} I:${inf} A:${air}  ${difficulty}/${h.aiPersonality}/${h.aiProductionProfile}  ${tactic}`;
     });
 
     lines.push(

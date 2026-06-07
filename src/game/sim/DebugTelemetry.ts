@@ -77,6 +77,9 @@ interface DebugHouseSnapshot {
   idleCombatUnits: number;
   attackUnits: number;
   enemyBuildingsRemaining: number;
+  personality: string;
+  productionProfile: string;
+  activeTactic: string;
   score: number;
 }
 
@@ -343,6 +346,9 @@ export class DebugTelemetry {
       idleCombatUnits,
       attackUnits,
       enemyBuildingsRemaining,
+      personality: house.aiPersonality,
+      productionProfile: house.aiProductionProfile,
+      activeTactic: house.aiActiveTactic,
       score: this.scoreHouse(sim, house),
     };
   }

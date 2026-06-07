@@ -29,6 +29,9 @@ import {
   genId,
   resetIds,
   type Aircraft,
+  type AiPersonality,
+  type AiProductionProfile,
+  type AiTacticMemory,
   type Building,
   type House,
   type Infantry,
@@ -59,66 +62,185 @@ export interface SimEvent {
 }
 
 interface TeamTemplate {
+  id: string;
+  name: string;
   unit: Partial<Record<UnitType, number>>;
   infantry: Partial<Record<InfantryType, number>>;
   aircraft: Partial<Record<AircraftType, number>>;
   quarry: TeamQuarry;
+  profile: AiProductionProfile;
+  personalities?: AiPersonality[];
 }
 
 const TEAM_TEMPLATES: Record<Faction, TeamTemplate[]> = {
   [Faction.Allies]: [
     {
+      id: 'allies-balanced-armor',
+      name: 'Balanced Armor',
       unit: { [UnitType.LightTank]: 2, [UnitType.MediumTank]: 2, [UnitType.Apc]: 1 },
       infantry: { [InfantryType.Rifle]: 3, [InfantryType.Rocket]: 2 },
       aircraft: {},
       quarry: 'factories',
+      profile: 'armor',
+      personalities: ['balanced', 'armor'],
     },
     {
+      id: 'allies-artillery-core',
+      name: 'Artillery Siege',
       unit: { [UnitType.MediumTank]: 3, [UnitType.Artillery]: 1 },
       infantry: { [InfantryType.Grenadier]: 2 },
       aircraft: {},
       quarry: 'defense',
+      profile: 'siege',
+      personalities: ['armor', 'opportunist'],
     },
     {
+      id: 'allies-infantry-flood',
+      name: 'Infantry Flood',
       unit: {},
       infantry: { [InfantryType.Rifle]: 4, [InfantryType.Grenadier]: 3, [InfantryType.Rocket]: 1 },
       aircraft: {},
       quarry: 'buildings',
+      profile: 'infantry',
+      personalities: ['balanced', 'opportunist'],
     },
     {
+      id: 'allies-longbow-harass',
+      name: 'Air Harassment',
       unit: {},
       infantry: {},
       aircraft: { [AircraftType.Longbow]: 2 },
       quarry: 'defense',
+      profile: 'air',
+      personalities: ['air', 'opportunist'],
+    },
+    {
+      id: 'allies-harvester-raid',
+      name: 'Harvester Raid',
+      unit: { [UnitType.Apc]: 1, [UnitType.LightTank]: 1 },
+      infantry: { [InfantryType.Rifle]: 2 },
+      aircraft: {},
+      quarry: 'harvesters',
+      profile: 'economy',
+      personalities: ['raider', 'opportunist'],
+    },
+    {
+      id: 'allies-fast-apc-raid',
+      name: 'Fast APC Raid',
+      unit: { [UnitType.Apc]: 2, [UnitType.LightTank]: 2 },
+      infantry: { [InfantryType.Rifle]: 3 },
+      aircraft: {},
+      quarry: 'power',
+      profile: 'infantry',
+      personalities: ['raider'],
+    },
+    {
+      id: 'allies-siege-breaker',
+      name: 'Siege Breaker',
+      unit: { [UnitType.Artillery]: 2, [UnitType.MediumTank]: 2 },
+      infantry: { [InfantryType.Rocket]: 2 },
+      aircraft: {},
+      quarry: 'defense',
+      profile: 'siege',
+      personalities: ['armor', 'opportunist'],
+    },
+    {
+      id: 'allies-finisher',
+      name: 'Base Finisher',
+      unit: { [UnitType.MediumTank]: 4, [UnitType.Apc]: 1 },
+      infantry: { [InfantryType.Rifle]: 4, [InfantryType.Rocket]: 2 },
+      aircraft: {},
+      quarry: 'factories',
+      profile: 'finisher',
+      personalities: ['balanced', 'armor', 'opportunist'],
     },
   ],
   [Faction.Soviets]: [
     {
+      id: 'soviet-power-crush',
+      name: 'Power Crush',
       unit: { [UnitType.HeavyTank]: 3, [UnitType.Apc]: 1 },
       infantry: { [InfantryType.Rifle]: 2, [InfantryType.Rocket]: 2, [InfantryType.Flamethrower]: 2 },
       aircraft: {},
       quarry: 'power',
+      profile: 'armor',
+      personalities: ['balanced', 'armor'],
     },
     {
+      id: 'soviet-heavy-rush',
+      name: 'Heavy Armor Rush',
       unit: { [UnitType.HeavyTank]: 4, [UnitType.Apc]: 1 },
       infantry: {},
       aircraft: {},
       quarry: 'factories',
+      profile: 'armor',
+      personalities: ['armor'],
     },
     {
+      id: 'soviet-flame-flood',
+      name: 'Flame Infantry Flood',
       unit: {},
       infantry: { [InfantryType.Rifle]: 4, [InfantryType.Flamethrower]: 3, [InfantryType.Rocket]: 1 },
       aircraft: {},
       quarry: 'buildings',
+      profile: 'infantry',
+      personalities: ['balanced', 'opportunist'],
     },
     {
+      id: 'soviet-air-strike',
+      name: 'Air Harassment',
       unit: {},
       infantry: {},
       aircraft: { [AircraftType.Hind]: 2, [AircraftType.Mig]: 1 },
       quarry: 'defense',
+      profile: 'air',
+      personalities: ['air', 'opportunist'],
+    },
+    {
+      id: 'soviet-harvester-raid',
+      name: 'Harvester Raid',
+      unit: { [UnitType.HeavyTank]: 1, [UnitType.Apc]: 1 },
+      infantry: { [InfantryType.Flamethrower]: 2 },
+      aircraft: {},
+      quarry: 'harvesters',
+      profile: 'economy',
+      personalities: ['raider', 'opportunist'],
+    },
+    {
+      id: 'soviet-mixed-assault',
+      name: 'Mixed Assault',
+      unit: { [UnitType.HeavyTank]: 2, [UnitType.Apc]: 1 },
+      infantry: { [InfantryType.Flamethrower]: 3, [InfantryType.Rocket]: 2 },
+      aircraft: { [AircraftType.Hind]: 1 },
+      quarry: 'power',
+      profile: 'armor',
+      personalities: ['balanced', 'opportunist'],
+    },
+    {
+      id: 'soviet-scout-probe',
+      name: 'Scout Probe',
+      unit: { [UnitType.Apc]: 1 },
+      infantry: { [InfantryType.Rifle]: 2 },
+      aircraft: {},
+      quarry: 'harvesters',
+      profile: 'infantry',
+      personalities: ['raider', 'opportunist'],
+    },
+    {
+      id: 'soviet-finisher',
+      name: 'Base Finisher',
+      unit: { [UnitType.HeavyTank]: 5 },
+      infantry: { [InfantryType.Rocket]: 2 },
+      aircraft: {},
+      quarry: 'factories',
+      profile: 'finisher',
+      personalities: ['armor', 'balanced', 'opportunist'],
     },
   ],
 };
+
+const PERSONALITY_ORDER: AiPersonality[] = ['balanced', 'raider', 'armor', 'air', 'turtle', 'opportunist'];
+const DIFFICULTY_ORDER: Difficulty[] = [Difficulty.Normal, Difficulty.Hard, Difficulty.Easy];
 
 export class GameSim {
   tick = 0;
@@ -161,6 +283,8 @@ export class GameSim {
         base.faction,
         getFactionColorVariant(base.faction, variant),
         config.startingCredits,
+        PERSONALITY_ORDER[(this.houses.length + variant) % PERSONALITY_ORDER.length],
+        DIFFICULTY_ORDER[this.houses.length % DIFFICULTY_ORDER.length],
       );
       this.spawnMCV(house.id, base.cellX, base.cellY);
       house.centerX = base.cellX;
@@ -174,7 +298,14 @@ export class GameSim {
     this.rebuildBlocked();
   }
 
-  private createHouse(name: string, faction: Faction, color: number, startingCredits: number): House {
+  private createHouse(
+    name: string,
+    faction: Faction,
+    color: number,
+    startingCredits: number,
+    personality: AiPersonality,
+    difficulty: Difficulty,
+  ): House {
     const house: House = {
       id: genId(),
       name,
@@ -185,7 +316,7 @@ export class GameSim {
       drain: 0,
       iq: RULES.maxIQ,
       techLevel: 10,
-      difficulty: Difficulty.Normal,
+      difficulty,
       isBaseBuilding: true,
       isDefeated: false,
       isStarted: true,
@@ -214,6 +345,16 @@ export class GameSim {
       maxAircraft: RULES.maxAircraft,
       productionQueues: [],
       pendingStructure: StructType.None,
+      aiPersonality: personality,
+      aiProductionProfile: personality === 'air' ? 'air' : personality === 'armor' ? 'armor' : 'economy',
+      aiActiveTactic: 'Buildup',
+      aiTemplateId: null,
+      aiTemplateUntilTick: 0,
+      aiRecentTactics: [],
+      aiLastEnemyScanTick: -Infinity,
+      aiLossWindowTick: 0,
+      aiRecentLosses: 0,
+      aiPanicUntilTick: 0,
     };
     this.houses.push(house);
     return house;
@@ -329,6 +470,62 @@ export class GameSim {
     return this.aircraft.filter((a) => a.houseId === houseId && a.hp > 0).length;
   }
 
+  getHouseCombatProfile(houseId: number): {
+    vehicles: number;
+    lightVehicles: number;
+    heavyVehicles: number;
+    artillery: number;
+    apcs: number;
+    infantry: number;
+    aircraft: number;
+    harvesters: number;
+    refineries: number;
+    factories: number;
+    defenses: number;
+    antiAir: number;
+    power: number;
+    drain: number;
+    buildings: number;
+    combatUnits: number;
+    helipads: number;
+    airstrips: number;
+  } {
+    const house = this.getHouse(houseId);
+    const vehicles = this.units.filter(
+      (u) => u.houseId === houseId && u.hp > 0 && u.type !== UnitType.Harvester && u.type !== UnitType.MCV,
+    );
+    const buildings = this.buildings.filter((b) => b.houseId === houseId && b.isComplete);
+    const defenses = buildings.filter((b) => (STRUCT_DEFS[b.type].weaponDamage ?? 0) > 0);
+    const antiAir = buildings.filter((b) => STRUCT_DEFS[b.type].antiAir).length;
+    const aircraft = this.countAircraft(houseId);
+    const infantry = this.countInfantry(houseId);
+
+    return {
+      vehicles: vehicles.length,
+      lightVehicles: vehicles.filter((u) => u.type === UnitType.LightTank || u.type === UnitType.Apc).length,
+      heavyVehicles: vehicles.filter((u) => u.type === UnitType.MediumTank || u.type === UnitType.HeavyTank).length,
+      artillery: vehicles.filter((u) => u.type === UnitType.Artillery).length,
+      apcs: vehicles.filter((u) => u.type === UnitType.Apc).length,
+      infantry,
+      aircraft,
+      harvesters: this.countUnitsOfType(houseId, UnitType.Harvester),
+      refineries: house?.quantities[StructType.Refinery] ?? 0,
+      factories: (house?.quantities[StructType.WarFactory] ?? 0) +
+        (house?.quantities[StructType.Barracks] ?? 0) +
+        (house?.quantities[StructType.Tent] ?? 0) +
+        (house?.quantities[StructType.Helipad] ?? 0) +
+        (house?.quantities[StructType.Airstrip] ?? 0),
+      defenses: defenses.length,
+      antiAir,
+      power: house?.power ?? 0,
+      drain: house?.drain ?? 0,
+      buildings: buildings.length,
+      combatUnits: vehicles.length + infantry + aircraft,
+      helipads: house?.quantities[StructType.Helipad] ?? 0,
+      airstrips: house?.quantities[StructType.Airstrip] ?? 0,
+    };
+  }
+
   hasProductionQueued(houseId: number, kind: ProductionQueue['kind']): boolean {
     const house = this.getHouse(houseId);
     return house ? house.productionQueues.some((q) => q.kind === kind) : false;
@@ -402,8 +599,92 @@ export class GameSim {
       this.isTeamTemplateBuildable(house, template),
     );
     const choices = templates.length > 0 ? templates : TEAM_TEMPLATES[house.faction];
-    const cadence = Math.max(1, RULES.autocreateTime * TICKS_PER_SECOND * 4);
-    return choices[Math.floor(this.tick / cadence) % choices.length];
+    const cached = choices.find((template) => template.id === house.aiTemplateId);
+    if (cached && this.tick < house.aiTemplateUntilTick) return cached;
+
+    const weighted = choices.map((template) => ({
+      template,
+      weight: this.teamTemplateWeight(house, template),
+    }));
+    const total = Math.max(1, weighted.reduce((sum, choice) => sum + choice.weight, 0));
+    let pick = Math.random() * total;
+    let selected = weighted[0].template;
+
+    for (const choice of weighted) {
+      pick -= choice.weight;
+      if (pick <= 0) {
+        selected = choice.template;
+        break;
+      }
+    }
+
+    house.aiTemplateId = selected.id;
+    house.aiTemplateUntilTick =
+      this.tick + TICKS_PER_SECOND * (18 + Math.floor(Math.random() * 15));
+    house.aiActiveTactic = selected.name;
+    house.aiProductionProfile = this.chooseProductionProfile(house, selected);
+    return selected;
+  }
+
+  private teamTemplateWeight(house: House, template: TeamTemplate): number {
+    let weight = 10 + this.countTemplateMatch(house, template) * 5;
+    const profile = this.getHouseCombatProfile(house.id);
+    const enemy = house.enemyId !== null ? this.getHouseCombatProfile(house.enemyId) : null;
+    const recentPenalty = this.recentTacticPenalty(house.aiRecentTactics, template.id);
+
+    if (template.personalities?.includes(house.aiPersonality)) weight += 12;
+    if (template.profile === house.aiProductionProfile) weight += 8;
+    if (house.aiPanicUntilTick > this.tick && template.profile !== 'economy') weight += 18;
+    if (enemy) {
+      if (template.quarry === 'harvesters' && enemy.harvesters >= 2) weight += 20;
+      if (template.quarry === 'power' && enemy.power >= enemy.drain && enemy.drain > 80) weight += 15;
+      if (template.quarry === 'defense' && enemy.defenses >= 2) weight += 14;
+      if (template.quarry === 'factories' && enemy.factories > profile.factories) weight += 16;
+      if (template.profile === 'finisher' && enemy.buildings <= 4) weight += 30;
+      if (template.profile === 'air' && enemy.antiAir <= 1) weight += 16;
+    }
+    if (profile.harvesters === 0 || profile.refineries === 0) {
+      weight += template.profile === 'economy' ? 18 : -8;
+    }
+    if (house.difficulty === Difficulty.Hard && template.profile !== 'economy') weight += 8;
+    if (house.difficulty === Difficulty.Easy && template.profile === 'finisher') weight -= 6;
+    if (house.aiPersonality === 'turtle' && template.quarry === 'defense') weight += 10;
+
+    return Math.max(1, weight - recentPenalty);
+  }
+
+  private countTemplateMatch(house: House, template: TeamTemplate): number {
+    let count = 0;
+    for (const type of Object.keys(template.unit) as UnitType[]) {
+      count += this.countReadyForTeam(house.id, type) + this.countQueued(house.id, type);
+    }
+    for (const type of Object.keys(template.infantry) as InfantryType[]) {
+      count += this.countReadyForTeam(house.id, type) + this.countQueued(house.id, type);
+    }
+    for (const type of Object.keys(template.aircraft) as AircraftType[]) {
+      count += this.countReadyForTeam(house.id, type) + this.countQueued(house.id, type);
+    }
+    return count;
+  }
+
+  private recentTacticPenalty(history: AiTacticMemory[], templateId: string): number {
+    return history
+      .filter((entry) => entry.id === templateId && this.tick - entry.tick < TICKS_PER_SECOND * 180)
+      .reduce((penalty, _entry, index) => penalty + 16 + index * 8, 0);
+  }
+
+  private chooseProductionProfile(house: House, template: TeamTemplate): AiProductionProfile {
+    const own = this.getHouseCombatProfile(house.id);
+    const enemy = house.enemyId !== null ? this.getHouseCombatProfile(house.enemyId) : null;
+    if (own.refineries === 0 || own.harvesters === 0 || house.credits < 400) return 'economy';
+    if (enemy && enemy.buildings <= 4 && own.combatUnits >= 6) return 'finisher';
+    if (house.aiPanicUntilTick > this.tick && own.vehicles >= 2) return 'armor';
+    if (template.profile === 'air' && own.helipads + own.airstrips > 0) return 'air';
+    if (template.profile === 'siege' && own.factories > 0) return 'siege';
+    if (house.aiPersonality === 'armor') return 'armor';
+    if (house.aiPersonality === 'air' && own.helipads + own.airstrips > 0) return 'air';
+    if (house.aiPersonality === 'raider') return 'infantry';
+    return template.profile;
   }
 
   private isTeamTemplateBuildable(house: House, template: TeamTemplate): boolean {
@@ -804,7 +1085,7 @@ export class GameSim {
     const aircraftIds = this.recruitAircraft(house.id, template.aircraft);
     const required = this.templateSize(template);
     const recruited = unitIds.length + infantryIds.length + aircraftIds.length;
-    const minRequired = Math.max(2, Math.ceil(required * 0.6));
+    const minRequired = Math.max(2, Math.ceil(required * this.teamLaunchRatio(house)));
 
     if (required === 0 || recruited < minRequired) {
       this.clearTeamAssignments([...unitIds, ...infantryIds, ...aircraftIds]);
@@ -858,8 +1139,32 @@ export class GameSim {
       launchTick: this.tick + TICKS_PER_SECOND * 8,
       launched: false,
     });
-    house.teamTimer = Math.floor(RULES.autocreateTime * TICKS_PER_SECOND * (8 + Math.random() * 10));
+    house.aiActiveTactic = template.name;
+    house.aiProductionProfile = template.profile;
+    house.aiRecentTactics = [
+      ...house.aiRecentTactics.filter((entry) => this.tick - entry.tick < TICKS_PER_SECOND * 240),
+      { id: template.id, tick: this.tick },
+    ].slice(-8);
+    house.aiTemplateUntilTick = 0;
+    house.teamTimer = Math.floor(
+      RULES.autocreateTime * TICKS_PER_SECOND * this.teamTimerScale(house) * (7 + Math.random() * 8),
+    );
     return true;
+  }
+
+  private teamLaunchRatio(house: House): number {
+    const gameMinutes = this.tick / (TICKS_PER_SECOND * 60);
+    const timeBonus = gameMinutes > 8 ? 0.1 : gameMinutes > 4 ? 0.05 : 0;
+    if (house.difficulty === Difficulty.Hard) return Math.min(0.85, 0.72 + timeBonus);
+    if (house.difficulty === Difficulty.Easy) return Math.min(0.65, 0.5 + timeBonus);
+    return Math.min(0.75, 0.62 + timeBonus);
+  }
+
+  private teamTimerScale(house: House): number {
+    if (house.aiPanicUntilTick > this.tick) return 0.5;
+    if (house.difficulty === Difficulty.Hard) return 0.65;
+    if (house.difficulty === Difficulty.Easy) return 1.35;
+    return 1;
   }
 
   fireSale(houseId: number): boolean {
@@ -1076,7 +1381,8 @@ export class GameSim {
       if (team.launched) continue;
       if (this.tick < team.launchTick && !this.isTeamAtRally(team)) continue;
 
-      const target = this.findBestEnemyTarget(team.houseId, team.rallyX, team.rallyY, team.quarry);
+      const teamSize = team.unitIds.length + team.infantryIds.length + team.aircraftIds.length;
+      const target = this.findBestEnemyTarget(team.houseId, team.rallyX, team.rallyY, team.quarry, teamSize, team.targetHouseId);
       const targetId = target?.id ?? null;
       for (const u of this.units) {
         if (!team.unitIds.includes(u.id)) continue;
@@ -1472,13 +1778,21 @@ export class GameSim {
     x: number,
     y: number,
     quarry: TeamQuarry,
+    teamSize = 0,
+    preferredHouseId: number | null = null,
   ): Building | Unit | Infantry | Aircraft | null {
     let best: Building | Unit | Infantry | Aircraft | null = null;
     let bestScore = -Infinity;
 
     const score = (entity: Building | Unit | Infantry | Aircraft): number => {
       const pos = this.targetPosition(entity);
-      return this.quarryPriority(entity, quarry) - dist(x, y, pos.x, pos.y) * 2;
+      const preferredBonus = preferredHouseId !== null && entity.houseId === preferredHouseId ? 40 : 0;
+      return (
+        this.quarryPriority(entity, quarry, teamSize) +
+        this.tacticalTargetBonus(entity, teamSize) +
+        preferredBonus -
+        dist(x, y, pos.x, pos.y) * 2
+      );
     };
 
     for (const entity of this.enemyTargets(houseId, false)) {
@@ -1535,7 +1849,12 @@ export class GameSim {
       : { x: target.x, y: target.y };
   }
 
-  private quarryPriority(target: Building | Unit | Infantry | Aircraft, quarry: TeamQuarry): number {
+  private quarryPriority(
+    target: Building | Unit | Infantry | Aircraft,
+    quarry: TeamQuarry,
+    teamSize: number,
+  ): number {
+    const targetHouse = this.getHouseCombatProfile(target.houseId);
     if ('cellX' in target) {
       const def = STRUCT_DEFS[target.type];
       const isFactory =
@@ -1547,17 +1866,22 @@ export class GameSim {
         target.type === StructType.Airstrip;
       const isDefense = (def.weaponDamage ?? 0) > 0;
       const isPower = def.power > 0;
+      const isTech = target.type === StructType.Tech || target.type === StructType.Tesla;
       if (quarry === 'factories' && isFactory) return 500;
       if (quarry === 'defense' && isDefense) return 500;
-      if (quarry === 'power' && isPower) return 500;
+      if (quarry === 'power' && isPower) return targetHouse.drain > 80 ? 560 : 500;
       if (quarry === 'buildings') return 350;
+      if (isTech && targetHouse.power >= targetHouse.drain) return 260;
       return 120 + def.cost / 20;
     }
 
     if ('cargo' in target) {
-      if (quarry === 'harvesters' && target.type === UnitType.Harvester) return 500;
+      if (quarry === 'harvesters' && target.type === UnitType.Harvester) {
+        return targetHouse.refineries >= 2 || targetHouse.harvesters >= 2 ? 580 : 500;
+      }
       if (quarry === 'vehicles') return 350;
-      return target.type === UnitType.Harvester ? 160 : 120;
+      if (teamSize <= 3 && target.type === UnitType.Harvester) return 250;
+      return target.type === UnitType.Harvester ? 180 : 120;
     }
 
     if (this.isAircraft(target)) {
@@ -1565,6 +1889,25 @@ export class GameSim {
     }
 
     return quarry === 'infantry' ? 350 : 80;
+  }
+
+  private tacticalTargetBonus(target: Building | Unit | Infantry | Aircraft, teamSize: number): number {
+    let bonus = 0;
+    const hpRatio = target.maxHp > 0 ? target.hp / target.maxHp : 1;
+    if (hpRatio < 0.35) bonus += 70;
+    else if (hpRatio < 0.65) bonus += 35;
+
+    if (!('cellX' in target) && teamSize > 0 && teamSize <= 3) {
+      const nearbyAllies = this.enemyTargets(-1, false).filter((entity) => {
+        if (entity.houseId !== target.houseId || entity.id === target.id) return false;
+        const a = this.targetPosition(entity);
+        const b = this.targetPosition(target);
+        return dist(a.x, a.y, b.x, b.y) < 5;
+      }).length;
+      if (nearbyAllies <= 1) bonus += 45;
+    }
+
+    return bonus;
   }
 
   private isAircraft(target: Building | Unit | Infantry | Aircraft): target is Aircraft {
@@ -1604,6 +1947,7 @@ export class GameSim {
     fromX?: number,
     fromY?: number,
   ): void {
+    const wasAlive = target.hp > 0;
     target.hp -= damage;
     const tx = 'cellX' in target ? target.cellX + 0.5 : target.x;
     const ty = 'cellY' in target ? target.cellY + 0.5 : target.y;
@@ -1629,11 +1973,14 @@ export class GameSim {
       targetType: targetMeta.type,
     });
 
-    if (target.hp <= 0) {
+    if (wasAlive && target.hp <= 0) {
       const attacker = this.getHouse(attackerHouseId);
       if (attacker) {
         const record = targetMeta.kind === 'structure' ? attacker.buildingsKilled : attacker.unitsKilled;
         record[targetMeta.houseId] = (record[targetMeta.houseId] ?? 0) + 1;
+      }
+      if (targetMeta.houseId !== attackerHouseId) {
+        this.recordAiLoss(targetMeta.houseId, targetMeta.kind, targetMeta.type);
       }
       if ('cellX' in target) {
         this.destroyBuilding(target);
@@ -1676,6 +2023,37 @@ export class GameSim {
       return { houseId: target.houseId, kind: 'infantry', type: target.type };
     }
     return { houseId: target.houseId, kind: 'aircraft', type: target.type };
+  }
+
+  private recordAiLoss(
+    houseId: number,
+    kind: 'structure' | 'unit' | 'infantry' | 'aircraft',
+    type: string,
+  ): void {
+    const house = this.getHouse(houseId);
+    if (!house || house.isDefeated) return;
+
+    if (this.tick - house.aiLossWindowTick > TICKS_PER_SECOND * 30) {
+      house.aiLossWindowTick = this.tick;
+      house.aiRecentLosses = 0;
+    }
+
+    house.aiRecentLosses += 1;
+    const majorStructure =
+      kind === 'structure' &&
+      (type === StructType.Refinery ||
+        type === StructType.WarFactory ||
+        type === StructType.Const ||
+        type === StructType.Tech);
+    const majorUnitLosses = kind !== 'structure' && house.aiRecentLosses >= 3;
+
+    if (majorStructure || majorUnitLosses) {
+      house.aiPanicUntilTick = this.tick + TICKS_PER_SECOND * 45;
+      house.aiActiveTactic = 'Panic Counterattack';
+      house.aiTemplateUntilTick = 0;
+      house.teamTimer = 0;
+      house.attackTimer = 0;
+    }
   }
 
   private destroyBuilding(b: Building): void {

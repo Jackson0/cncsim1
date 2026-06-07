@@ -85,8 +85,9 @@ export function pointerToCell(
   pointer: Phaser.Input.Pointer,
   camera: Phaser.Cameras.Scene2D.Camera,
 ): { x: number; y: number } | null {
-  const worldX = camera.scrollX + pointer.x / camera.zoom;
-  const worldY = camera.scrollY + pointer.y / camera.zoom;
+  const worldPoint = camera.getWorldPoint(pointer.x, pointer.y);
+  const worldX = worldPoint.x;
+  const worldY = worldPoint.y;
   const x = Math.floor(worldX / CELL_SIZE);
   const y = Math.floor(worldY / CELL_SIZE);
   if (x < 0 || x >= MAP_COLS || y < 0 || y >= MAP_ROWS) return null;

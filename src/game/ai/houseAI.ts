@@ -79,6 +79,25 @@ function hasIncome(sim: GameSim, house: House): boolean {
   );
 }
 
+function difficultyAttackScale(difficulty: Difficulty): number {
+  if (difficulty === Difficulty.Easy) return 2;
+  if (difficulty === Difficulty.Hard) return 0.6;
+  return 1;
+}
+
+function difficultySkipChance(difficulty: Difficulty): number {
+  if (difficulty === Difficulty.Easy) return 0.4;
+  if (difficulty === Difficulty.Hard) return 0;
+  return 0.25;
+}
+
+function armedGroundCount(sim: GameSim, house: House): number {
+  return sim.getUnits().filter((u) => {
+    if (u.houseId !== house.id || u.hp <= 0) return false;
+    return (UNIT_DEFS[u.type].weaponDamage ?? 0) > 0;
+  }).length + sim.getInfantry().filter((i) => i.houseId === house.id && i.hp > 0).length;
+}
+
 /** HOUSE.CPP AI_Building */
 export function aiBuilding(sim: GameSim, house: House): void {
   if (house.buildStructure !== StructType.None || house.pendingStructure !== StructType.None) return;
@@ -90,11 +109,15 @@ export function aiBuilding(sim: GameSim, house: House): void {
   const curBuildings = sim.countBuildings(house.id);
   const choices: BuildChoice[] = [];
   const enemy = house.enemyId !== null ? sim.getHouse(house.enemyId) : null;
+  const enemyProfile = enemy ? sim.getHouseCombatProfile(enemy.id) : null;
+  const pendingDrain = sim.getBuildings()
+    .filter((b) => b.houseId === house.id && !b.isComplete)
+    .reduce((sum, b) => sum + STRUCT_DEFS[b.type].drain, 0);
 
   const addPower = (type: StructType) => {
     const def = STRUCT_DEFS[type];
     if (!canBuildStructure(sim, house, type)) return;
-    if (house.power > house.drain + RULES.powerSurplus) return;
+    if (house.power > house.drain + pendingDrain + RULES.powerSurplus) return;
     if (def.cost > money && !hasInc) return;
     choices.push({
       urgency: (house.quantities[StructType.Refinery] ?? 0) === 0 ? Urgency.Low : Urgency.Medium,
@@ -150,8 +173,22 @@ export function aiBuilding(sim: GameSim, house: House): void {
     (house.quantities[StructType.Pillbox] ?? 0) +
     (house.quantities[StructType.Turret] ?? 0) +
     (house.quantities[StructType.FlameTurret] ?? 0);
-  if (hasWarFactory(house) && defCount < roundUp(RULES.defenseRatio, curBuildings) && defCount < RULES.defenseLimit) {
-    const fallbackDefense = Math.random() < 0.5 ? StructType.Pillbox : StructType.Turret;
+  const defenseRatio =
+    RULES.defenseRatio *
+    (house.aiPersonality === 'turtle' ? 1.35 : house.aiPersonality === 'raider' ? 0.8 : 1);
+  if (hasWarFactory(house) && defCount < roundUp(defenseRatio, curBuildings) && defCount < RULES.defenseLimit) {
+    const vehicleThreat = enemyProfile ? enemyProfile.vehicles + enemyProfile.aircraft : 0;
+    const infantryThreat = enemyProfile ? enemyProfile.infantry : 0;
+    const fallbackDefense =
+      house.faction === Faction.Soviets
+        ? StructType.FlameTurret
+        : vehicleThreat > infantryThreat
+          ? StructType.Turret
+          : infantryThreat > vehicleThreat
+            ? StructType.Pillbox
+            : Math.random() < 0.5
+              ? StructType.Pillbox
+              : StructType.Turret;
     const types = [StructType.FlameTurret, fallbackDefense];
     for (const t of types) {
       const def = STRUCT_DEFS[t];
@@ -231,7 +268,7 @@ export function aiUnit(sim: GameSim, house: House): void {
 
   if (
     house.iq >= RULES.iqHarvester &&
-    house.difficulty !== Difficulty.Hard &&
+    (house.difficulty !== Difficulty.Hard || house.aiProductionProfile === 'economy') &&
     !sim.isTiberiumShort(house.id) &&
     refineries > harvesters
   ) {
@@ -240,6 +277,8 @@ export function aiUnit(sim: GameSim, house: House): void {
   }
 
   if (!house.isBaseBuilding) return;
+  const enemy = house.enemyId !== null ? sim.getHouse(house.enemyId) : null;
+  const enemyProfile = enemy ? sim.getHouseCombatProfile(enemy.id) : null;
 
   for (const need of sim.getTeamNeeds(house.id, 'unit')) {
     const type = need.type as UnitType;
@@ -263,7 +302,36 @@ export function aiUnit(sim: GameSim, house: House): void {
     const def = UNIT_DEFS[t];
     if (!sim.canBuildUnitType(house, t)) continue;
     if (def.cost > house.credits) continue;
-    const w = def.weaponDamage ? 20 : 1;
+    let w = def.weaponDamage ? 20 : 1;
+
+    if (house.aiProductionProfile === 'armor') {
+      if (t === UnitType.MediumTank || t === UnitType.HeavyTank) w += 14;
+      if (t === UnitType.LightTank) w += 6;
+    } else if (house.aiProductionProfile === 'siege') {
+      if (t === UnitType.Artillery) w += 22;
+      if (t === UnitType.MediumTank || t === UnitType.HeavyTank) w += 6;
+    } else if (house.aiProductionProfile === 'infantry') {
+      if (t === UnitType.Apc) w += 12;
+      if (t === UnitType.LightTank) w += 5;
+    } else if (house.aiProductionProfile === 'finisher') {
+      if (t === UnitType.MediumTank || t === UnitType.HeavyTank) w += 18;
+      if (t === UnitType.Apc) w += 6;
+    }
+
+    if (enemyProfile) {
+      if (enemyProfile.heavyVehicles > enemyProfile.lightVehicles + enemyProfile.infantry) {
+        if (t === UnitType.Artillery) w += 18;
+        if (t === UnitType.Apc) w += 8;
+        if (t === UnitType.MediumTank) w += 6;
+      }
+      if (enemyProfile.lightVehicles + enemyProfile.infantry > enemyProfile.heavyVehicles + 2) {
+        if (t === UnitType.MediumTank || t === UnitType.HeavyTank) w += 14;
+        if (t === UnitType.Apc) w += 6;
+      }
+      if (enemyProfile.defenses >= 2 && t === UnitType.Artillery) w += 16;
+      if (enemyProfile.harvesters >= 2 && (t === UnitType.LightTank || t === UnitType.Apc)) w += 8;
+    }
+
     weights.push({ type: t, w });
   }
 
@@ -290,6 +358,7 @@ export function aiInfantry(sim: GameSim, house: House): void {
   if (!hasWarFactory(house) && house.credits < RULES.infantryReserve) return;
 
   const enemy = house.enemyId !== null ? sim.getHouse(house.enemyId) : null;
+  const enemyProfile = enemy ? sim.getHouseCombatProfile(enemy.id) : null;
   const curInf = sim.countInfantry(house.id);
   const curBld = sim.countBuildings(house.id);
 
@@ -317,10 +386,23 @@ export function aiInfantry(sim: GameSim, house: House): void {
     if (def.cost > house.credits && house.credits < RULES.infantryReserve) continue;
     const enemyQ = enemy ? (enemy.quantities[type] ?? 0) : 0;
     const myQ = house.quantities[type] ?? 0;
+    let nextW = w;
     if (enemy && enemyQ > myQ) {
-      weights.push({ type, w: w + 2 });
+      nextW += 2;
+    }
+    if (house.aiProductionProfile === 'infantry') {
+      if (type === InfantryType.Rifle || type === InfantryType.Flamethrower || type === InfantryType.Grenadier) nextW += 4;
+    } else if (house.aiProductionProfile === 'siege' || house.aiProductionProfile === 'armor') {
+      if (type === InfantryType.Rocket) nextW += 4;
+    } else if (house.aiProductionProfile === 'finisher') {
+      if (type !== InfantryType.Engineer) nextW += 3;
+    }
+    if (enemyProfile && enemyProfile.vehicles > enemyProfile.infantry && type === InfantryType.Rocket) nextW += 4;
+
+    if (enemy && enemyQ > myQ) {
+      weights.push({ type, w: nextW });
     } else if (house.credits > RULES.infantryReserve || curInf < curBld * RULES.infantryBaseMult) {
-      weights.push({ type, w });
+      weights.push({ type, w: nextW });
     }
   }
 
@@ -387,26 +469,40 @@ export function expertAI(sim: GameSim, house: House): void {
     }
   }
 
-  if (house.enemyId === null) {
+  const shouldRescoreEnemy =
+    house.enemyId === null ||
+    sim.tick - house.aiLastEnemyScanTick >= TICKS_PER_SECOND * 30 ||
+    house.aiPanicUntilTick > sim.tick;
+
+  if (shouldRescoreEnemy) {
     const enemies = sim.getHouses().filter((h) => h.id !== house.id && !h.isDefeated);
     if (enemies.length > 0 && sim.countBuildings(house.id) > 0) {
-      let best = enemies[0];
+      const currentEnemy = house.enemyId !== null ? sim.getHouse(house.enemyId) : null;
+      let best = currentEnemy && !currentEnemy.isDefeated ? currentEnemy : enemies[0];
       let bestScore = -Infinity;
+      let currentScore = -Infinity;
       for (const e of enemies) {
         const d = Math.hypot(house.centerX - e.centerX, house.centerY - e.centerY);
+        const profile = sim.getHouseCombatProfile(e.id);
         const score =
           1000 -
           d * 2 +
           sim.countBuildings(e.id) * 5 +
+          profile.harvesters * 12 +
+          profile.factories * 8 +
           (e.buildingsKilled[house.id] ?? 0) * 5 +
           (e.unitsKilled[house.id] ?? 0) +
-          (house.lastAttackerId === e.id ? 100 : 0);
+          (house.lastAttackerId === e.id ? 140 : 0);
+        if (currentEnemy?.id === e.id) currentScore = score;
         if (score > bestScore) {
           bestScore = score;
           best = e;
         }
       }
-      house.enemyId = best.id;
+      if (house.enemyId === null || bestScore > currentScore + 75 || house.aiPanicUntilTick > sim.tick) {
+        house.enemyId = best.id;
+      }
+      house.aiLastEnemyScanTick = sim.tick;
     }
   }
 
@@ -492,11 +588,33 @@ function aiLowerPower(sim: GameSim, house: House): void {
 /** HOUSE.CPP AI_Attack */
 function aiAttack(sim: GameSim, house: House): void {
   const forced = sim.countBuildings(house.id) === 0;
-  const shuffle = !(sim.tick > TICKS_PER_SECOND * 60 && forced) && Math.random() < 0.33;
+  const panic = house.aiPanicUntilTick > sim.tick;
+  const armedCount =
+    armedGroundCount(sim, house) +
+    sim.getAircraft().filter((a) => a.houseId === house.id && a.hp > 0).length;
+  const minForAttack = forced || panic
+    ? 1
+    : Math.min(4 + Math.floor(sim.tick / (TICKS_PER_SECOND * 120)), house.difficulty === Difficulty.Hard ? 12 : 10);
+  const interval =
+    RULES.attackInterval *
+    TICKS_PER_SECOND *
+    difficultyAttackScale(house.difficulty) *
+    (0.5 + Math.random());
+
+  if (!forced && armedCount < minForAttack) {
+    house.attackTimer = interval;
+    return;
+  }
+
+  const shuffle =
+    !panic &&
+    !(sim.tick > TICKS_PER_SECOND * 60 && forced) &&
+    Math.random() < difficultySkipChance(house.difficulty);
 
   if (!shuffle || forced) {
     for (const u of sim.getUnits()) {
       if (u.houseId !== house.id || u.hp <= 0) continue;
+      if (!forced && u.teamId !== null) continue;
       const def = UNIT_DEFS[u.type];
       if (def.weaponDamage && (forced || Math.random() < 0.75)) {
         sim.assignHunt(u.id, 'unit');
@@ -504,20 +622,21 @@ function aiAttack(sim: GameSim, house: House): void {
     }
     for (const i of sim.getInfantry()) {
       if (i.houseId !== house.id || i.hp <= 0) continue;
+      if (!forced && i.teamId !== null) continue;
       if (forced || Math.random() < 0.75) {
         sim.assignHunt(i.id, 'infantry');
       }
     }
     for (const a of sim.getAircraft()) {
       if (a.houseId !== house.id || a.hp <= 0) continue;
+      if (!forced && a.teamId !== null) continue;
       if (forced || Math.random() < 0.75) {
         sim.assignHunt(a.id, 'aircraft');
       }
     }
   }
 
-  house.attackTimer =
-    RULES.attackInterval * TICKS_PER_SECOND * (0.5 + Math.random());
+  house.attackTimer = interval;
 }
 
 export function processHouseAI(sim: GameSim, house: House): void {
