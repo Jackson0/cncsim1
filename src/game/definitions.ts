@@ -3,8 +3,8 @@
 export const TICKS_PER_SECOND = 15;
 export const CELL_SIZE = 32;
 
-export const MAP_COLS = 40;
-export const MAP_ROWS = 28;
+export const MAP_COLS = 80;
+export const MAP_ROWS = 56;
 
 export const STARTING_CREDITS = 3000;
 

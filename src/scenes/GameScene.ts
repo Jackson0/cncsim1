@@ -35,7 +35,7 @@ import {
   type DebugRunReport,
   writeDebugReport,
 } from '../game/sim/DebugTelemetry';
-import { WORLD_H, WORLD_W, setupCameraControls } from './mapView';
+import { WORLD_H, WORLD_W, centerCameraOnWorld, setupCameraControls } from './mapView';
 
 const SIM_SPEED = 4;
 const SIM_TICK_MS = 1000 / TICKS_PER_SECOND / SIM_SPEED;
@@ -51,6 +51,7 @@ export class GameScene extends Phaser.Scene {
   sim!: GameSim;
   hudText!: Phaser.GameObjects.Text;
   logText!: Phaser.GameObjects.Text;
+  titleText!: Phaser.GameObjects.Text;
 
   private signalField: SignalFieldRenderer | null = null;
   private oreRenderer: OreBloomRenderer | null = null;
@@ -97,8 +98,9 @@ export class GameScene extends Phaser.Scene {
     }
     this.profiles = this.debugMode ? new Map() : createFactionVisualProfiles(this.sim.getHouses());
 
-    this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
-    this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
+    document.body.classList.remove('setup-active');
+    this.scale.refresh();
+    centerCameraOnWorld(this);
 
     if (!this.debugMode) {
       this.signalField = new SignalFieldRenderer(this, WORLD_W, WORLD_H, this.visualConfig);
@@ -138,8 +140,8 @@ export class GameScene extends Phaser.Scene {
       this.installVisualToggles();
     }
 
-    this.add
-      .text(WORLD_W - 10, 10, this.debugMode ? 'Debug sim monitor' : 'Spectral RTS automata', {
+    this.titleText = this.add
+      .text(10, 10, this.debugMode ? 'Debug sim monitor' : 'Spectral RTS automata', {
         fontFamily: 'Segoe UI, sans-serif',
         fontSize: '12px',
         color: '#9adcec',
@@ -147,6 +149,12 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(1, 0)
       .setScrollFactor(0)
       .setDepth(10);
+
+    this.layoutOverlay();
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.layoutOverlay, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutOverlay, this);
+    });
   }
 
   update(time: number, delta: number): void {
@@ -234,7 +242,6 @@ export class GameScene extends Phaser.Scene {
         const weaponType = this.inferWeaponType(ev);
         const targetBuilding = this.findBuildingAtCell(ev.x, ev.y);
         this.combatRenderer?.emitDamage(ev, profile, weaponType);
-        this.signalField?.emitGridRipple(ev.x * CELL_SIZE, ev.y * CELL_SIZE, profile.primary);
 
         if (targetBuilding) {
           this.buildingRenderer?.emitBuildingDamaged(targetBuilding, weaponDamageHint(weaponType), this.profileForHouseId(targetBuilding.houseId));
@@ -450,6 +457,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.hudText.setText(lines.join('\n'));
+    this.layoutOverlay();
   }
 
   private completeDebugRun(stop: { result: 'defeat' | 'stall' | 'timeout'; reason: string }): void {
@@ -566,5 +574,21 @@ export class GameScene extends Phaser.Scene {
 
   private colorToCssHex(color: number): string {
     return `#${color.toString(16).padStart(6, '0')}`;
+  }
+
+  private layoutOverlay(): void {
+    if (!this.hudText || !this.logText || !this.titleText) return;
+
+    const compact = this.scale.width < 760;
+    const hudWidth = compact ? Math.max(230, this.scale.width - 20) : Math.min(720, Math.max(360, this.scale.width - 28));
+    this.hudText.setPosition(10, 10);
+    this.hudText.setFontSize(compact ? 10 : 13);
+    this.hudText.setWordWrapWidth(hudWidth);
+
+    this.logText.setPosition(10, this.scale.height - 10);
+    this.logText.setFontSize(compact ? 9 : 11);
+    this.logText.setWordWrapWidth(compact ? Math.max(220, this.scale.width - 20) : Math.min(420, this.scale.width - 20));
+
+    this.titleText.setPosition(this.scale.width - 10, 10);
   }
 }

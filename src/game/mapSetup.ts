@@ -25,7 +25,8 @@ export interface MapSetupConfig {
 }
 
 const DEFAULT_BASE_Y = Math.floor(MAP_ROWS / 2);
-const DEFAULT_BASE_INSET = 4;
+const DEFAULT_BASE_X = Math.floor(MAP_COLS / 2);
+const DEFAULT_BASE_SPACING = 16;
 
 export const DEFAULT_MAP_SETUP: MapSetupConfig = {
   startingCredits: STARTING_CREDITS,
@@ -34,21 +35,21 @@ export const DEFAULT_MAP_SETUP: MapSetupConfig = {
       id: 'base-1',
       name: 'Allies',
       faction: Faction.Allies,
-      cellX: DEFAULT_BASE_INSET,
+      cellX: DEFAULT_BASE_X - DEFAULT_BASE_SPACING,
       cellY: DEFAULT_BASE_Y,
     },
     {
       id: 'base-2',
       name: 'Soviets',
       faction: Faction.Soviets,
-      cellX: MAP_COLS - DEFAULT_BASE_INSET - 2,
+      cellX: DEFAULT_BASE_X + DEFAULT_BASE_SPACING,
       cellY: DEFAULT_BASE_Y,
     },
   ],
   oreFields: [
     {
       id: 'ore-1',
-      cellX: Math.floor(MAP_COLS / 2),
+      cellX: DEFAULT_BASE_X,
       cellY: DEFAULT_BASE_Y,
       amount: Number.POSITIVE_INFINITY,
     },

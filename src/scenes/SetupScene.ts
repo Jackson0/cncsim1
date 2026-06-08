@@ -12,8 +12,7 @@ import {
 } from '../game/mapSetup';
 import { DEFAULT_DEBUG_MAX_TICKS } from '../game/sim/DebugTelemetry';
 import {
-  WORLD_H,
-  WORLD_W,
+  centerCameraOnWorld,
   drawGrid,
   pointerToCell,
   renderBaseMarkers,
@@ -23,7 +22,10 @@ import {
 
 type SetupMode = 'bases' | 'ore' | 'select';
 
-const PANEL_W = 380;
+interface PointerStart {
+  x: number;
+  y: number;
+}
 
 export class SetupScene extends Phaser.Scene {
   private config: MapSetupConfig = cloneMapSetup(DEFAULT_MAP_SETUP);
@@ -32,25 +34,24 @@ export class SetupScene extends Phaser.Scene {
   private selectedOreId: string | null = null;
   private worldGfx!: Phaser.GameObjects.Graphics;
   private markerGfx!: Phaser.GameObjects.Graphics;
-  private modeButtons!: Record<SetupMode, Phaser.GameObjects.Text>;
-  private baseRows: Phaser.GameObjects.Text[] = [];
-  private oreRows: Phaser.GameObjects.Text[] = [];
-  private setupStatusText!: Phaser.GameObjects.Text;
-  private selectedInfoText!: Phaser.GameObjects.Text;
-  private startButton!: Phaser.GameObjects.Text;
-  private removeBaseButton!: Phaser.GameObjects.Text;
-  private renameBaseButton!: Phaser.GameObjects.Text;
-  private factionButton!: Phaser.GameObjects.Text;
-  private removeOreButton!: Phaser.GameObjects.Text;
-  private nextId = 3;
-  private startingCreditsRoot: HTMLDivElement | null = null;
+  private modeButtons!: Record<SetupMode, HTMLButtonElement>;
+  private baseListEl: HTMLDivElement | null = null;
+  private oreListEl: HTMLDivElement | null = null;
+  private setupStatusEl: HTMLDivElement | null = null;
+  private selectedInfoEl: HTMLDivElement | null = null;
+  private startButton: HTMLButtonElement | null = null;
+  private removeBaseButton: HTMLButtonElement | null = null;
+  private renameBaseButton: HTMLButtonElement | null = null;
+  private factionButton: HTMLButtonElement | null = null;
+  private removeOreButton: HTMLButtonElement | null = null;
   private startingCreditsInput: HTMLInputElement | null = null;
-  private oreControlsRoot: HTMLDivElement | null = null;
   private oreAmountInput: HTMLInputElement | null = null;
   private oreInfiniteInput: HTMLInputElement | null = null;
-  private debugModeRoot: HTMLDivElement | null = null;
   private debugModeInput: HTMLInputElement | null = null;
   private debugMaxTicksInput: HTMLInputElement | null = null;
+  private panelRoot: HTMLElement | null = null;
+  private pointerStart: PointerStart | null = null;
+  private nextId = 3;
 
   constructor() {
     super('SetupScene');
@@ -62,8 +63,9 @@ export class SetupScene extends Phaser.Scene {
     this.selectedOreId = this.config.oreFields[0]?.id ?? null;
     this.nextId = Math.max(this.config.bases.length + 1, this.config.oreFields.length + 1, 3);
 
-    this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
-    this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
+    document.body.classList.add('setup-active');
+    this.scale.refresh();
+    centerCameraOnWorld(this);
 
     drawGrid(this);
     this.worldGfx = this.add.graphics().setDepth(1);
@@ -71,9 +73,6 @@ export class SetupScene extends Phaser.Scene {
     setupCameraControls(this);
 
     this.buildUi();
-    this.createStartingCreditsControl();
-    this.createOreControls();
-    this.createDebugModeControl();
     this.setupInputHandlers();
     this.refreshUi();
 
@@ -111,95 +110,182 @@ export class SetupScene extends Phaser.Scene {
   }
 
   private buildUi(): void {
-    this.add
-      .rectangle(0, 0, PANEL_W, this.scale.height, 0x020510, 0.78)
-      .setOrigin(0, 0)
-      .setDepth(9)
-      .setScrollFactor(0);
+    const host = document.getElementById('setup-panel-root') ?? document.body;
+    host.innerHTML = '';
 
-    this.add
-      .text(12, 10, 'Signal Setup', {
-        fontFamily: 'Segoe UI, sans-serif',
-        fontSize: '24px',
-        color: '#effcff',
-      })
-      .setDepth(10)
-      .setScrollFactor(0);
+    const panel = document.createElement('div');
+    panel.className = 'setup-panel';
 
-    this.add
-      .text(12, 42, 'LMB place - RMB pan - scroll zoom - Del removes selected', {
-        fontFamily: 'Segoe UI, sans-serif',
-        fontSize: '12px',
-        color: '#9adcec',
-      })
-      .setDepth(10)
-      .setScrollFactor(0);
+    const title = document.createElement('div');
+    title.className = 'setup-title';
+    const heading = document.createElement('h1');
+    heading.textContent = 'Setup';
+    const mapSize = document.createElement('span');
+    mapSize.className = 'setup-help';
+    mapSize.textContent = `${MAP_COLS}x${MAP_ROWS}`;
+    title.append(heading, mapSize);
 
+    const help = document.createElement('div');
+    help.className = 'setup-help';
+    help.textContent = 'Tap/click places selected items. Right-drag or touch-drag pans. Wheel or pinch zooms. Del removes selected.';
+
+    const modeSection = this.createSection('Mode');
+    const modeRow = document.createElement('div');
+    modeRow.className = 'setup-row';
     this.modeButtons = {
-      bases: this.createButton(12, 66, 'Bases', () => this.setMode('bases')),
-      ore: this.createButton(94, 66, 'Ore', () => this.setMode('ore')),
-      select: this.createButton(156, 66, 'Select', () => this.setMode('select')),
+      bases: this.createButton('Bases', () => this.setMode('bases')),
+      ore: this.createButton('Ore', () => this.setMode('ore')),
+      select: this.createButton('Select', () => this.setMode('select')),
     };
+    modeRow.append(this.modeButtons.bases, this.modeButtons.ore, this.modeButtons.select);
+    modeSection.append(modeRow);
 
-    this.add
-      .text(12, 104, 'Bases', {
-        fontFamily: 'Consolas, monospace',
-        fontSize: '13px',
-        color: '#cceeff',
-      })
-      .setDepth(10)
-      .setScrollFactor(0);
+    this.selectedInfoEl = document.createElement('div');
+    this.selectedInfoEl.className = 'setup-selected';
 
-    this.createButton(70, 102, '+ Add', () => this.addBase());
-    this.removeBaseButton = this.createButton(128, 102, '- Remove', () => this.removeSelectedBase());
-    this.renameBaseButton = this.createButton(212, 102, 'Rename', () => this.renameSelectedBase());
-    this.factionButton = this.createButton(288, 102, 'Faction', () => this.toggleSelectedBaseFaction());
+    const baseSection = this.createSection('Bases');
+    const baseActions = document.createElement('div');
+    baseActions.className = 'setup-actions';
+    const addBaseButton = this.createButton('+ Add', () => this.addBase());
+    this.removeBaseButton = this.createButton('- Remove', () => this.removeSelectedBase());
+    this.renameBaseButton = this.createButton('Rename', () => this.renameSelectedBase());
+    this.factionButton = this.createButton('Faction', () => this.toggleSelectedBaseFaction());
+    baseActions.append(addBaseButton, this.removeBaseButton, this.renameBaseButton, this.factionButton);
+    this.baseListEl = document.createElement('div');
+    this.baseListEl.className = 'setup-list';
+    baseSection.append(baseActions, this.baseListEl);
 
-    this.selectedInfoText = this.add
-      .text(12, 132, '', {
-        fontFamily: 'Consolas, monospace',
-        fontSize: '12px',
-        color: '#cde1f4',
-      })
-      .setDepth(10)
-      .setScrollFactor(0);
+    const oreSection = this.createSection('Ore fields');
+    const oreActions = document.createElement('div');
+    oreActions.className = 'setup-actions';
+    this.removeOreButton = this.createButton('Remove ore', () => this.removeSelectedOre());
+    oreActions.append(this.removeOreButton);
+    this.oreListEl = document.createElement('div');
+    this.oreListEl.className = 'setup-list';
+    oreSection.append(oreActions, this.oreListEl);
 
-    this.add
-      .text(12, 314, 'Ore fields', {
-        fontFamily: 'Consolas, monospace',
-        fontSize: '13px',
-        color: '#cceeff',
-      })
-      .setDepth(10)
-      .setScrollFactor(0);
+    const optionsSection = this.createSection('Options');
+    optionsSection.append(
+      this.createNumberField('Starting credits', String(this.config.startingCredits), '0', '100', (input) => {
+        this.startingCreditsInput = input;
+        input.addEventListener('input', () => {
+          this.config.startingCredits = this.getUiStartingCredits();
+          this.syncStartState();
+        });
+      }),
+      this.createOreAmountField(),
+      this.createDebugField(),
+    );
 
-    this.removeOreButton = this.createButton(98, 312, 'Remove ore', () => this.removeSelectedOre());
+    this.setupStatusEl = document.createElement('div');
+    this.setupStatusEl.className = 'setup-status';
+    this.startButton = this.createButton('Start Sim', () => this.startSimulation());
+    this.startButton.classList.add('setup-start');
 
-    this.setupStatusText = this.add
-      .text(12, this.scale.height - 92, '', {
-        fontFamily: 'Consolas, monospace',
-        fontSize: '12px',
-        color: '#ffcc88',
-      })
-      .setDepth(10)
-      .setScrollFactor(0);
+    panel.append(title, help, modeSection, this.selectedInfoEl, baseSection, oreSection, optionsSection, this.setupStatusEl, this.startButton);
+    host.append(panel);
+    this.panelRoot = host;
+  }
 
-    this.startButton = this.createButton(12, this.scale.height - 58, 'Start Sim', () => this.startSimulation());
+  private createSection(title: string): HTMLDivElement {
+    const section = document.createElement('div');
+    section.className = 'setup-section';
+    const heading = document.createElement('h2');
+    heading.textContent = title;
+    section.append(heading);
+    return section;
+  }
+
+  private createNumberField(
+    labelText: string,
+    value: string,
+    min: string,
+    step: string,
+    onCreate: (input: HTMLInputElement) => void,
+  ): HTMLLabelElement {
+    const label = document.createElement('label');
+    label.className = 'setup-field';
+    label.append(document.createTextNode(labelText));
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = min;
+    input.step = step;
+    input.value = value;
+    label.append(input);
+    onCreate(input);
+
+    return label;
+  }
+
+  private createOreAmountField(): HTMLDivElement {
+    const root = document.createElement('div');
+    root.className = 'setup-field';
+
+    const amountLabel = document.createElement('label');
+    amountLabel.append(document.createTextNode('Ore amount'));
+
+    const amountInput = document.createElement('input');
+    amountInput.type = 'number';
+    amountInput.min = '1';
+    amountInput.step = '100';
+    amountInput.value = String(DEFAULT_ORE_AMOUNT);
+    amountLabel.append(amountInput);
+
+    const infiniteLabel = document.createElement('label');
+    infiniteLabel.className = 'setup-check';
+    const infiniteInput = document.createElement('input');
+    infiniteInput.type = 'checkbox';
+    infiniteLabel.append(infiniteInput, document.createTextNode('Infinite'));
+
+    root.append(amountLabel, infiniteLabel);
+    this.oreAmountInput = amountInput;
+    this.oreInfiniteInput = infiniteInput;
+    return root;
+  }
+
+  private createDebugField(): HTMLDivElement {
+    const root = document.createElement('div');
+    root.className = 'setup-field';
+
+    const debugLabel = document.createElement('label');
+    debugLabel.className = 'setup-check';
+    const debugInput = document.createElement('input');
+    debugInput.type = 'checkbox';
+    debugLabel.append(debugInput, document.createTextNode('Debug'));
+
+    const maxTicksLabel = document.createElement('label');
+    maxTicksLabel.append(document.createTextNode('Max ticks'));
+    const maxTicksInput = document.createElement('input');
+    maxTicksInput.type = 'number';
+    maxTicksInput.min = '1';
+    maxTicksInput.step = '1000';
+    maxTicksInput.value = String(DEFAULT_DEBUG_MAX_TICKS);
+    maxTicksLabel.append(maxTicksInput);
+
+    root.append(debugLabel, maxTicksLabel);
+    this.debugModeInput = debugInput;
+    this.debugMaxTicksInput = maxTicksInput;
+    return root;
   }
 
   private setupInputHandlers(): void {
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (!pointer.leftButtonDown()) return;
-      if (this.isPointerOverPanelUi(pointer)) return;
+      if (pointer.rightButtonDown()) return;
+      if (!pointerToCell(pointer, this.cameras.main)) return;
+      this.pointerStart = { x: pointer.x, y: pointer.y };
+    });
+
+    this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+      if (!this.pointerStart) return;
+      const distance = Phaser.Math.Distance.Between(this.pointerStart.x, this.pointerStart.y, pointer.x, pointer.y);
+      this.pointerStart = null;
+      if (distance > 12) return;
       this.handleMapClick(pointer);
     });
 
     this.input.keyboard?.on('keydown-DELETE', () => this.deleteSelection());
     this.input.keyboard?.on('keydown-BACKSPACE', () => this.deleteSelection());
-  }
-
-  private isPointerOverPanelUi(pointer: Phaser.Input.Pointer): boolean {
-    return this.input.hitTestPointer(pointer).length > 0;
   }
 
   private handleMapClick(pointer: Phaser.Input.Pointer): void {
@@ -265,8 +351,8 @@ export class SetupScene extends Phaser.Scene {
       id: `base-${this.nextId++}`,
       name: `Player ${index + 1}`,
       faction: index % 2 === 0 ? Faction.Allies : Faction.Soviets,
-      cellX: Phaser.Math.Clamp(4 + index * 2, 1, MAP_COLS - 2),
-      cellY: Phaser.Math.Clamp(Math.floor(MAP_ROWS / 2) + (index % 2 === 0 ? -2 : 2), 1, MAP_ROWS - 2),
+      cellX: Phaser.Math.Clamp(Math.floor(MAP_COLS / 2) - 8 + index * 4, 1, MAP_COLS - 2),
+      cellY: Phaser.Math.Clamp(Math.floor(MAP_ROWS / 2) + (index % 2 === 0 ? -4 : 4), 1, MAP_ROWS - 2),
     };
     this.config.bases.push(base);
     this.selectedBaseId = base.id;
@@ -278,7 +364,7 @@ export class SetupScene extends Phaser.Scene {
   private removeSelectedBase(): void {
     if (!this.selectedBaseId) return;
     if (this.config.bases.length <= 2) {
-      this.setupStatusText.setText('At least two bases are required.');
+      this.setStatus('At least two bases are required.');
       return;
     }
     this.config.bases = this.config.bases.filter((base) => base.id !== this.selectedBaseId);
@@ -325,7 +411,7 @@ export class SetupScene extends Phaser.Scene {
     this.config.startingCredits = this.getUiStartingCredits();
     const validation = isValidSetup(this.config);
     if (!validation.ok) {
-      this.setupStatusText.setText(validation.reason ?? 'Setup is invalid.');
+      this.setStatus(validation.reason ?? 'Setup is invalid.');
       return;
     }
     this.scene.start('GameScene', {
@@ -340,13 +426,13 @@ export class SetupScene extends Phaser.Scene {
     const selectedOre = this.getSelectedOre();
     const colors = this.getBaseColorMap();
 
-    this.selectedInfoText.setText(
-      selectedBase
+    if (this.selectedInfoEl) {
+      this.selectedInfoEl.textContent = selectedBase
         ? `Selected base: ${selectedBase.name} (${selectedBase.faction === Faction.Allies ? 'Allies' : 'Soviets'}) @ ${selectedBase.cellX},${selectedBase.cellY}`
         : selectedOre
           ? `Selected ore: ${selectedOre.cellX},${selectedOre.cellY} amount=${this.formatOreAmount(selectedOre.amount)}`
-          : 'Selected: none',
-    );
+          : 'Selected: none';
+    }
 
     this.syncModeButtons();
     this.rebuildBaseRows(colors);
@@ -362,60 +448,38 @@ export class SetupScene extends Phaser.Scene {
   }
 
   private rebuildBaseRows(colors: Map<string, number>): void {
-    for (const row of this.baseRows) row.destroy();
-    this.baseRows = [];
+    if (!this.baseListEl) return;
+    this.baseListEl.innerHTML = '';
 
-    let y = 158;
     for (const base of this.config.bases) {
       const isSelected = base.id === this.selectedBaseId;
-      const line = `${isSelected ? '>' : ' '} ${base.name.padEnd(10)} ${base.faction === Faction.Allies ? 'A' : 'S'} @ ${base.cellX},${base.cellY}`;
-      const row = this.add
-        .text(12, y, line, {
-          fontFamily: 'Consolas, monospace',
-          fontSize: '11px',
-          color: this.colorToCss(colors.get(base.id) ?? 0xffffff),
-          backgroundColor: isSelected ? '#223748' : '#00000044',
-          padding: { x: 4, y: 2 },
-        })
-        .setDepth(10)
-        .setScrollFactor(0)
-        .setInteractive({ useHandCursor: true });
-      row.on('pointerup', () => {
+      const line = `${isSelected ? '> ' : ''}${base.name.padEnd(10)} ${base.faction === Faction.Allies ? 'A' : 'S'} @ ${base.cellX},${base.cellY}`;
+      const row = this.createListButton(line, isSelected);
+      row.style.color = this.colorToCss(colors.get(base.id) ?? 0xffffff);
+      row.addEventListener('click', () => {
         this.selectedBaseId = base.id;
         this.selectedOreId = null;
         this.refreshUi();
       });
-      this.baseRows.push(row);
-      y += 22;
+      this.baseListEl.append(row);
     }
   }
 
   private rebuildOreRows(): void {
-    for (const row of this.oreRows) row.destroy();
-    this.oreRows = [];
+    if (!this.oreListEl) return;
+    this.oreListEl.innerHTML = '';
 
-    let y = 338;
     for (const ore of this.config.oreFields) {
       const isSelected = ore.id === this.selectedOreId;
-      const line = `${isSelected ? '>' : ' '} @ ${ore.cellX},${ore.cellY} amount=${this.formatOreAmount(ore.amount)}`;
-      const row = this.add
-        .text(12, y, line, {
-          fontFamily: 'Consolas, monospace',
-          fontSize: '11px',
-          color: '#b8dfb8',
-          backgroundColor: isSelected ? '#2b3f20' : '#00000044',
-          padding: { x: 4, y: 2 },
-        })
-        .setDepth(10)
-        .setScrollFactor(0)
-        .setInteractive({ useHandCursor: true });
-      row.on('pointerup', () => {
+      const line = `${isSelected ? '> ' : ''}@ ${ore.cellX},${ore.cellY} amount=${this.formatOreAmount(ore.amount)}`;
+      const row = this.createListButton(line, isSelected);
+      row.style.color = '#b8dfb8';
+      row.addEventListener('click', () => {
         this.selectedOreId = ore.id;
         this.selectedBaseId = null;
         this.refreshUi();
       });
-      this.oreRows.push(row);
-      y += 22;
+      this.oreListEl.append(row);
     }
   }
 
@@ -426,10 +490,10 @@ export class SetupScene extends Phaser.Scene {
     this.styleButton(this.removeOreButton, !!this.selectedOreId);
 
     const selectedBase = this.getSelectedBase();
-    if (selectedBase) {
-      this.factionButton.setText(selectedBase.faction === Faction.Allies ? 'To Sov' : 'To Ally');
-    } else {
-      this.factionButton.setText('Faction');
+    if (this.factionButton) {
+      this.factionButton.textContent = selectedBase
+        ? selectedBase.faction === Faction.Allies ? 'To Sov' : 'To Ally'
+        : 'Faction';
     }
   }
 
@@ -437,7 +501,7 @@ export class SetupScene extends Phaser.Scene {
     this.config.startingCredits = this.getUiStartingCredits();
     const validation = isValidSetup(this.config);
     this.styleButton(this.startButton, validation.ok);
-    this.setupStatusText.setText(validation.ok ? 'Ready. Click Start Sim to begin.' : validation.reason ?? '');
+    this.setStatus(validation.ok ? 'Ready. Click Start Sim to begin.' : validation.reason ?? '');
   }
 
   private getBaseColorMap(): Map<string, number> {
@@ -502,155 +566,25 @@ export class SetupScene extends Phaser.Scene {
     return { baseId: null, oreId: null };
   }
 
-  private createOreControls(): void {
-    const root = document.createElement('div');
-    root.style.position = 'fixed';
-    root.style.left = '14px';
-    root.style.top = '520px';
-    root.style.zIndex = '20';
-    root.style.padding = '8px';
-    root.style.background = 'rgba(0,0,0,0.55)';
-    root.style.border = '1px solid rgba(175,200,225,0.35)';
-    root.style.borderRadius = '4px';
-    root.style.color = '#cde1f4';
-    root.style.fontFamily = 'Consolas, monospace';
-    root.style.fontSize = '12px';
-    root.style.pointerEvents = 'none';
-
-    const amountLabel = document.createElement('label');
-    amountLabel.style.pointerEvents = 'auto';
-    amountLabel.textContent = 'Ore amount: ';
-    amountLabel.style.marginRight = '6px';
-
-    const amountInput = document.createElement('input');
-    amountInput.type = 'number';
-    amountInput.min = '1';
-    amountInput.step = '100';
-    amountInput.value = String(DEFAULT_ORE_AMOUNT);
-    amountInput.style.width = '110px';
-    amountInput.style.marginRight = '10px';
-    amountInput.style.pointerEvents = 'auto';
-
-    const infiniteLabel = document.createElement('label');
-    infiniteLabel.style.display = 'inline-flex';
-    infiniteLabel.style.alignItems = 'center';
-    infiniteLabel.style.gap = '4px';
-    infiniteLabel.style.pointerEvents = 'auto';
-
-    const infiniteInput = document.createElement('input');
-    infiniteInput.type = 'checkbox';
-    infiniteInput.style.pointerEvents = 'auto';
-    infiniteLabel.append(infiniteInput, document.createTextNode('Infinite'));
-
-    root.append(amountLabel, amountInput, infiniteLabel);
-    document.body.appendChild(root);
-
-    this.oreControlsRoot = root;
-    this.oreAmountInput = amountInput;
-    this.oreInfiniteInput = infiniteInput;
-  }
-
-  private createStartingCreditsControl(): void {
-    const root = document.createElement('div');
-    root.style.position = 'fixed';
-    root.style.left = '14px';
-    root.style.top = '474px';
-    root.style.zIndex = '20';
-    root.style.padding = '8px';
-    root.style.background = 'rgba(0,0,0,0.55)';
-    root.style.border = '1px solid rgba(175,200,225,0.35)';
-    root.style.borderRadius = '4px';
-    root.style.color = '#cde1f4';
-    root.style.fontFamily = 'Consolas, monospace';
-    root.style.fontSize = '12px';
-    root.style.pointerEvents = 'none';
-
-    const label = document.createElement('label');
-    label.style.pointerEvents = 'auto';
-    label.textContent = 'Starting credits: ';
-    label.style.marginRight = '6px';
-
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.min = '0';
-    input.step = '100';
-    input.value = String(this.config.startingCredits);
-    input.style.width = '110px';
-    input.style.pointerEvents = 'auto';
-    input.addEventListener('input', () => {
-      this.config.startingCredits = this.getUiStartingCredits();
-      this.syncStartState();
-    });
-
-    root.append(label, input);
-    document.body.appendChild(root);
-
-    this.startingCreditsRoot = root;
-    this.startingCreditsInput = input;
-  }
-
-  private createDebugModeControl(): void {
-    const root = document.createElement('div');
-    root.style.position = 'fixed';
-    root.style.left = '14px';
-    root.style.top = '566px';
-    root.style.zIndex = '20';
-    root.style.padding = '8px';
-    root.style.background = 'rgba(0,0,0,0.55)';
-    root.style.border = '1px solid rgba(175,200,225,0.35)';
-    root.style.borderRadius = '4px';
-    root.style.color = '#cde1f4';
-    root.style.fontFamily = 'Consolas, monospace';
-    root.style.fontSize = '12px';
-    root.style.pointerEvents = 'none';
-
-    const label = document.createElement('label');
-    label.style.display = 'inline-flex';
-    label.style.alignItems = 'center';
-    label.style.gap = '6px';
-    label.style.pointerEvents = 'auto';
-
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.style.pointerEvents = 'auto';
-    label.append(input, document.createTextNode('Debug'));
-
-    const maxTicksLabel = document.createElement('label');
-    maxTicksLabel.style.display = 'block';
-    maxTicksLabel.style.marginTop = '8px';
-    maxTicksLabel.style.pointerEvents = 'auto';
-    maxTicksLabel.textContent = 'Max ticks: ';
-
-    const maxTicksInput = document.createElement('input');
-    maxTicksInput.type = 'number';
-    maxTicksInput.min = '1';
-    maxTicksInput.step = '1000';
-    maxTicksInput.value = String(DEFAULT_DEBUG_MAX_TICKS);
-    maxTicksInput.style.width = '110px';
-    maxTicksInput.style.marginLeft = '6px';
-    maxTicksInput.style.pointerEvents = 'auto';
-    maxTicksLabel.append(maxTicksInput);
-
-    root.append(label, maxTicksLabel);
-    document.body.appendChild(root);
-
-    this.debugModeRoot = root;
-    this.debugModeInput = input;
-    this.debugMaxTicksInput = maxTicksInput;
-  }
-
   private destroyHtmlControls(): void {
+    document.body.classList.remove('setup-active');
+    if (this.panelRoot) this.panelRoot.innerHTML = '';
+    this.panelRoot = null;
+    this.baseListEl = null;
+    this.oreListEl = null;
+    this.setupStatusEl = null;
+    this.selectedInfoEl = null;
+    this.startButton = null;
+    this.removeBaseButton = null;
+    this.renameBaseButton = null;
+    this.factionButton = null;
+    this.removeOreButton = null;
     this.startingCreditsInput = null;
-    this.startingCreditsRoot?.remove();
-    this.startingCreditsRoot = null;
     this.oreAmountInput = null;
     this.oreInfiniteInput = null;
-    this.oreControlsRoot?.remove();
-    this.oreControlsRoot = null;
     this.debugModeInput = null;
     this.debugMaxTicksInput = null;
-    this.debugModeRoot?.remove();
-    this.debugModeRoot = null;
+    window.setTimeout(() => this.scale.refresh(), 0);
   }
 
   private getUiOreAmount(): number {
@@ -678,40 +612,34 @@ export class SetupScene extends Phaser.Scene {
     return Math.floor(value);
   }
 
-  private createButton(
-    x: number,
-    y: number,
-    label: string,
-    onClick: () => void,
-  ): Phaser.GameObjects.Text {
-    const button = this.add
-      .text(x, y, label, {
-        fontFamily: 'Segoe UI, sans-serif',
-        fontSize: '12px',
-        color: '#d6e9ff',
-        backgroundColor: '#23425a',
-        padding: { x: 6, y: 4 },
-      })
-      .setDepth(10)
-      .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true });
-
-    button.setData('enabled', true);
-    button.on('pointerup', () => {
-      if (!button.getData('enabled')) return;
+  private createButton(label: string, onClick: () => void): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'setup-button';
+    button.textContent = label;
+    button.addEventListener('click', () => {
+      if (button.disabled) return;
       onClick();
     });
     return button;
   }
 
-  private styleButton(button: Phaser.GameObjects.Text, enabled: boolean, active = false): void {
-    button.setData('enabled', enabled);
-    button.setAlpha(enabled ? 1 : 0.45);
-    if (!enabled) {
-      button.setBackgroundColor('#343434');
-      return;
-    }
-    button.setBackgroundColor(active ? '#2e6b96' : '#23425a');
+  private createListButton(label: string, selected: boolean): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `setup-list-button${selected ? ' is-selected' : ''}`;
+    button.textContent = label;
+    return button;
+  }
+
+  private styleButton(button: HTMLButtonElement | null, enabled: boolean, active = false): void {
+    if (!button) return;
+    button.disabled = !enabled;
+    button.classList.toggle('is-active', active);
+  }
+
+  private setStatus(text: string): void {
+    if (this.setupStatusEl) this.setupStatusEl.textContent = text;
   }
 
   private formatOreAmount(amount: number): string {

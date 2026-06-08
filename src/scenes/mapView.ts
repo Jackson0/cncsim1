@@ -4,6 +4,8 @@ import { ORE_FIELD_RADIUS } from '../game/mapSetup';
 
 export const WORLD_W = MAP_COLS * CELL_SIZE;
 export const WORLD_H = MAP_ROWS * CELL_SIZE;
+const MIN_ZOOM = 0.35;
+const MAX_ZOOM = 2.25;
 
 export interface PreviewOreField {
   cellX: number;
@@ -63,22 +65,86 @@ export function drawGrid(scene: Phaser.Scene): Phaser.GameObjects.Graphics {
   return g;
 }
 
+export function centerCameraOnWorld(scene: Phaser.Scene): void {
+  const cam = scene.cameras.main;
+  cam.setBounds(0, 0, WORLD_W, WORLD_H);
+  cam.centerOn(WORLD_W / 2, WORLD_H / 2);
+  clampCamera(cam);
+}
+
 export function setupCameraControls(scene: Phaser.Scene): void {
+  scene.input.addPointer(2);
+  let pinchDistance = 0;
+
+  scene.game.canvas.addEventListener('contextmenu', preventContextMenu);
+  scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+    scene.game.canvas.removeEventListener('contextmenu', preventContextMenu);
+  });
+
   scene.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-    if (p.isDown && p.rightButtonDown()) {
-      scene.cameras.main.scrollX -= (p.x - p.prevPosition.x) / scene.cameras.main.zoom;
-      scene.cameras.main.scrollY -= (p.y - p.prevPosition.y) / scene.cameras.main.zoom;
+    const cam = scene.cameras.main;
+    const pointers = scene.input.manager.pointers.filter((pointer) => pointer.active && pointer.isDown);
+
+    if (pointers.length >= 2) {
+      const [a, b] = pointers;
+      const distance = Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y);
+      if (pinchDistance > 0) {
+        const midpoint = new Phaser.Math.Vector2((a.x + b.x) / 2, (a.y + b.y) / 2);
+        zoomCameraAt(cam, midpoint.x, midpoint.y, cam.zoom * (distance / pinchDistance));
+      }
+      pinchDistance = distance;
+      return;
     }
+
+    pinchDistance = 0;
+
+    if (p.isDown && (p.rightButtonDown() || isTouchPointer(p))) {
+      cam.scrollX -= (p.x - p.prevPosition.x) / cam.zoom;
+      cam.scrollY -= (p.y - p.prevPosition.y) / cam.zoom;
+      clampCamera(cam);
+    }
+  });
+
+  scene.input.on('pointerup', () => {
+    pinchDistance = 0;
   });
 
   scene.input.on(
     'wheel',
-    (_p: Phaser.Input.Pointer, _gos: unknown, _dx: number, dy: number) => {
+    (p: Phaser.Input.Pointer, _gos: unknown, _dx: number, dy: number) => {
       const cam = scene.cameras.main;
-      const z = Phaser.Math.Clamp(cam.zoom + (dy > 0 ? -0.1 : 0.1), 0.5, 2);
-      cam.setZoom(z);
+      zoomCameraAt(cam, p.x, p.y, cam.zoom + (dy > 0 ? -0.12 : 0.12));
     },
   );
+}
+
+function zoomCameraAt(
+  cam: Phaser.Cameras.Scene2D.Camera,
+  screenX: number,
+  screenY: number,
+  targetZoom: number,
+): void {
+  const before = cam.getWorldPoint(screenX, screenY);
+  cam.setZoom(Phaser.Math.Clamp(targetZoom, MIN_ZOOM, MAX_ZOOM));
+  const after = cam.getWorldPoint(screenX, screenY);
+  cam.scrollX += before.x - after.x;
+  cam.scrollY += before.y - after.y;
+  clampCamera(cam);
+}
+
+function clampCamera(cam: Phaser.Cameras.Scene2D.Camera): void {
+  const maxScrollX = Math.max(0, WORLD_W - cam.width / cam.zoom);
+  const maxScrollY = Math.max(0, WORLD_H - cam.height / cam.zoom);
+  cam.scrollX = Phaser.Math.Clamp(cam.scrollX, 0, maxScrollX);
+  cam.scrollY = Phaser.Math.Clamp(cam.scrollY, 0, maxScrollY);
+}
+
+function isTouchPointer(pointer: Phaser.Input.Pointer): boolean {
+  return typeof TouchEvent !== 'undefined' && pointer.event instanceof TouchEvent;
+}
+
+function preventContextMenu(event: MouseEvent): void {
+  event.preventDefault();
 }
 
 export function pointerToCell(

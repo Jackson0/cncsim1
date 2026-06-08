@@ -39,7 +39,7 @@ export const PSYCHEDELIC_VISUAL_PRESETS: Record<VisualQuality, PsychedelicVisual
   low: {
     quality: 'low',
     enableBackgroundFlow: false,
-    enableTrails: true,
+    enableTrails: false,
     enableOreMandalas: false,
     enableCombatMandalas: false,
     enableScreenFlashes: false,
@@ -53,11 +53,11 @@ export const PSYCHEDELIC_VISUAL_PRESETS: Record<VisualQuality, PsychedelicVisual
   medium: {
     quality: 'medium',
     enableBackgroundFlow: false,
-    enableTrails: true,
+    enableTrails: false,
     enableOreMandalas: true,
     enableCombatMandalas: true,
     enableScreenFlashes: false,
-    enableGridRipples: true,
+    enableGridRipples: false,
     trailFadeAlpha: 0.15,
     maxParticles: 420,
     maxActiveShockwaves: 80,
@@ -67,11 +67,11 @@ export const PSYCHEDELIC_VISUAL_PRESETS: Record<VisualQuality, PsychedelicVisual
   high: {
     quality: 'high',
     enableBackgroundFlow: true,
-    enableTrails: true,
+    enableTrails: false,
     enableOreMandalas: true,
     enableCombatMandalas: true,
     enableScreenFlashes: true,
-    enableGridRipples: true,
+    enableGridRipples: false,
     trailFadeAlpha: 0.2,
     maxParticles: 680,
     maxActiveShockwaves: 120,
@@ -823,15 +823,14 @@ export class BuildingGlyphRenderer extends ConfigurableRenderer {
   update(time: number, delta: number): void {
     this.bursts = this.bursts.filter((burst) => {
       burst.age += delta;
+      if (burst.kind === 'damage') return false;
       const pct = Phaser.Math.Clamp(burst.age / burst.duration, 0, 1);
       const alpha = 1 - pct;
-      const radius = burst.radius * (burst.kind === 'damage' ? 0.24 + pct * 0.34 : 0.2 + pct);
+      const radius = burst.radius * (0.2 + pct);
 
-      this.gfx.lineStyle(burst.kind === 'damage' ? 1 : 2, burst.color, alpha * (burst.kind === 'damage' ? 0.34 : 0.48));
+      this.gfx.lineStyle(2, burst.color, alpha * 0.48);
       this.gfx.strokeCircle(burst.x, burst.y, radius);
-      if (burst.kind !== 'damage') {
-        drawRadialSpokes(this.gfx, burst.x, burst.y, radius * 0.22, radius, 10, time * 0.001, burst.color, alpha * 0.25);
-      }
+      drawRadialSpokes(this.gfx, burst.x, burst.y, radius * 0.22, radius, 10, time * 0.001, burst.color, alpha * 0.25);
       return burst.age < burst.duration;
     });
   }
@@ -1228,10 +1227,11 @@ export class UnitGlyphRenderer extends ConfigurableRenderer {
   private drawBursts(time: number, delta: number): void {
     this.bursts = this.bursts.filter((burst) => {
       burst.age += delta;
+      if (burst.kind === 'damage') return false;
       const pct = Phaser.Math.Clamp(burst.age / burst.duration, 0, 1);
       const alpha = 1 - pct;
-      const radius = burst.radius * (burst.kind === 'damage' ? 0.2 + pct * 0.38 : 0.25 + pct);
-      this.unitGfx.lineStyle(1, burst.color, alpha * (burst.kind === 'damage' ? 0.36 : 0.54));
+      const radius = burst.radius * (0.25 + pct);
+      this.unitGfx.lineStyle(1, burst.color, alpha * 0.54);
       this.unitGfx.strokeCircle(burst.x, burst.y, radius);
       if (burst.kind === 'destroy') {
         drawRadialSpokes(this.unitGfx, burst.x, burst.y, radius * 0.2, radius, 8, time * 0.003, burst.color, alpha * 0.24);
@@ -1619,14 +1619,16 @@ export class CombatEffectsRenderer extends ConfigurableRenderer {
 
       this.gfx.fillStyle(0xffffff, alpha * (mandala.destroy ? 0.18 : 0.06));
       this.gfx.fillCircle(mandala.x, mandala.y, Math.max(1.4, (mandala.destroy ? 8 : 6) * alpha));
-      for (let i = 0; i < rings; i++) {
-        const r = radius * (1 - i * 0.2);
-        this.gfx.lineStyle(
-          i === 0 ? (mandala.destroy ? 2 : 1) : 1,
-          i % 2 === 0 ? mandala.profile.primary : mandala.profile.accent,
-          alpha * (mandala.destroy ? 0.56 - i * 0.12 : 0.34 - i * 0.1),
-        );
-        this.gfx.strokeCircle(mandala.x, mandala.y, r);
+      if (mandala.destroy) {
+        for (let i = 0; i < rings; i++) {
+          const r = radius * (1 - i * 0.2);
+          this.gfx.lineStyle(
+            i === 0 ? 2 : 1,
+            i % 2 === 0 ? mandala.profile.primary : mandala.profile.accent,
+            alpha * (0.56 - i * 0.12),
+          );
+          this.gfx.strokeCircle(mandala.x, mandala.y, r);
+        }
       }
 
       if (this.config.enableCombatMandalas) {

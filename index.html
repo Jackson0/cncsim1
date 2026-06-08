@@ -6,6 +6,11 @@
     <title>Abstract RTS Automata</title>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+      }
       body {
         background:
           linear-gradient(135deg, rgba(91, 255, 231, 0.08), transparent 38%),
@@ -13,15 +18,213 @@
           #03050c;
         overflow: hidden;
         font-family: 'Segoe UI', system-ui, sans-serif;
+        color: #d9fbff;
       }
-      #game-container {
+      #app-shell {
+        display: flex;
         width: 100vw;
         height: 100vh;
+        min-width: 0;
+        min-height: 0;
+      }
+      #setup-panel-root {
+        display: none;
+        width: 380px;
+        min-width: 340px;
+        max-width: 420px;
+        height: 100vh;
+        overflow: hidden;
+        border-right: 1px solid rgba(154, 220, 236, 0.28);
+        background: rgba(2, 5, 16, 0.92);
+        box-shadow: 14px 0 34px rgba(0, 0, 0, 0.32);
+      }
+      body.setup-active #setup-panel-root {
+        display: block;
+      }
+      #game-container {
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 0;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+        user-select: none;
+      }
+      #game-container canvas {
+        display: block;
+        touch-action: none;
+      }
+      .setup-panel {
+        height: 100%;
+        padding: 14px;
+        overflow: auto;
+        scrollbar-width: thin;
+      }
+      .setup-title {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+      .setup-title h1 {
+        font-size: 24px;
+        font-weight: 700;
+        line-height: 1;
+      }
+      .setup-help {
+        margin-bottom: 12px;
+        color: #9adcec;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .setup-section {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(154, 220, 236, 0.18);
+      }
+      .setup-section h2 {
+        margin-bottom: 8px;
+        color: #cceeff;
+        font-family: Consolas, monospace;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .setup-row,
+      .setup-actions,
+      .setup-field {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+      .setup-field {
+        justify-content: space-between;
+        margin-top: 8px;
+        color: #cde1f4;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+      }
+      .setup-field input[type="number"] {
+        width: 116px;
+      }
+      .setup-check {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #cde1f4;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+      }
+      .setup-button,
+      .setup-list-button {
+        border: 1px solid rgba(154, 220, 236, 0.24);
+        border-radius: 4px;
+        background: #23425a;
+        color: #d6e9ff;
+        cursor: pointer;
+        font: 600 12px 'Segoe UI', system-ui, sans-serif;
+      }
+      .setup-button {
+        padding: 6px 9px;
+      }
+      .setup-button.is-active {
+        background: #2e6b96;
+        border-color: rgba(137, 235, 255, 0.56);
+      }
+      .setup-button:disabled {
+        cursor: default;
+        opacity: 0.45;
+        background: #343434;
+      }
+      .setup-list {
+        display: grid;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .setup-list-button {
+        width: 100%;
+        padding: 6px 7px;
+        background: rgba(0, 0, 0, 0.28);
+        font-family: Consolas, monospace;
+        font-weight: 500;
+        text-align: left;
+      }
+      .setup-list-button.is-selected {
+        background: rgba(47, 84, 112, 0.72);
+        border-color: rgba(255, 255, 255, 0.35);
+      }
+      .setup-selected {
+        min-height: 38px;
+        margin-top: 10px;
+        padding: 7px;
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.26);
+        color: #cde1f4;
+        font: 12px/1.35 Consolas, monospace;
+      }
+      .setup-status {
+        margin-top: 12px;
+        min-height: 34px;
+        color: #ffcc88;
+        font: 12px/1.35 Consolas, monospace;
+      }
+      .setup-start {
+        width: 100%;
+        margin-top: 8px;
+        padding: 9px 10px;
+        font-size: 13px;
+      }
+      input {
+        min-height: 28px;
+        border: 1px solid rgba(154, 220, 236, 0.28);
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.9);
+        color: #101820;
+        padding: 2px 6px;
+      }
+      @media (max-width: 760px) {
+        #app-shell {
+          flex-direction: column;
+        }
+        #setup-panel-root {
+          width: 100%;
+          max-width: none;
+          min-width: 0;
+          height: 42vh;
+          min-height: 270px;
+          border-right: 0;
+          border-top: 1px solid rgba(154, 220, 236, 0.28);
+          box-shadow: 0 -12px 34px rgba(0, 0, 0, 0.36);
+          order: 2;
+        }
+        #game-container {
+          order: 1;
+        }
+        body.setup-active #game-container {
+          height: 58vh;
+        }
+        .setup-panel {
+          padding: 12px;
+        }
+        .setup-title h1 {
+          font-size: 20px;
+        }
+        .setup-help {
+          font-size: 11px;
+        }
+        .setup-section {
+          margin-top: 9px;
+          padding-top: 9px;
+        }
       }
     </style>
   </head>
   <body>
-    <div id="game-container"></div>
+    <div id="app-shell">
+      <aside id="setup-panel-root" aria-label="Setup"></aside>
+      <main id="game-container"></main>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
