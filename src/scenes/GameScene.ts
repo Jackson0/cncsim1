@@ -35,7 +35,19 @@ import {
   type DebugRunReport,
   writeDebugReport,
 } from '../game/sim/DebugTelemetry';
-import { WORLD_H, WORLD_W, centerCameraOnWorld, setupCameraControls } from './mapView';
+import { WORLD_H, WORLD_W, centerCameraOnWorld, pointerToCell, setupCameraControls } from './mapView';
+
+type EntityKind = 'building' | 'unit' | 'infantry' | 'aircraft';
+
+interface EntitySelection {
+  kind: EntityKind;
+  id: number;
+}
+
+interface PointerStart {
+  x: number;
+  y: number;
+}
 
 const SIM_SPEED = 4;
 const SIM_TICK_MS = 1000 / TICKS_PER_SECOND / SIM_SPEED;
@@ -49,9 +61,6 @@ interface GameSceneInitData {
 
 export class GameScene extends Phaser.Scene {
   sim!: GameSim;
-  hudText!: Phaser.GameObjects.Text;
-  logText!: Phaser.GameObjects.Text;
-  titleText!: Phaser.GameObjects.Text;
 
   private signalField: SignalFieldRenderer | null = null;
   private oreRenderer: OreBloomRenderer | null = null;
@@ -62,8 +71,13 @@ export class GameScene extends Phaser.Scene {
 
   private simAccumulator = 0;
   private logLines: string[] = [];
-  private entityLabels = new Map<string, Phaser.GameObjects.Text>();
   private setupConfig?: MapSetupConfig;
+  private panelRoot: HTMLElement | null = null;
+  private selectedInfoEl: HTMLDivElement | null = null;
+  private statusInfoEl: HTMLDivElement | null = null;
+  private logInfoEl: HTMLDivElement | null = null;
+  private selectedEntity: EntitySelection | null = null;
+  private pointerStart: PointerStart | null = null;
   private debugMode = false;
   private debugMaxTicks = DEFAULT_DEBUG_MAX_TICKS;
   private debugTelemetry: DebugTelemetry | null = null;
@@ -99,8 +113,10 @@ export class GameScene extends Phaser.Scene {
     this.profiles = this.debugMode ? new Map() : createFactionVisualProfiles(this.sim.getHouses());
 
     document.body.classList.remove('setup-active');
+    document.body.classList.add('game-active');
     this.scale.refresh();
     centerCameraOnWorld(this);
+    this.buildPlayPanel();
 
     if (!this.debugMode) {
       this.signalField = new SignalFieldRenderer(this, WORLD_W, WORLD_H, this.visualConfig);
@@ -111,57 +127,21 @@ export class GameScene extends Phaser.Scene {
       this.combatRenderer = new CombatEffectsRenderer(this, this.visualConfig);
     }
 
-    this.hudText = this.add
-      .text(10, 10, '', {
-        fontFamily: 'Consolas, monospace',
-        fontSize: '13px',
-        color: '#d9fbff',
-        backgroundColor: '#020510cc',
-        padding: { x: 8, y: 6 },
-      })
-      .setScrollFactor(0)
-      .setDepth(10);
-
-    this.logText = this.add
-      .text(10, this.scale.height - 10, '', {
-        fontFamily: 'Consolas, monospace',
-        fontSize: '11px',
-        color: '#c7d7ff',
-        backgroundColor: '#02051099',
-        padding: { x: 6, y: 4 },
-        wordWrap: { width: 400 },
-      })
-      .setOrigin(0, 1)
-      .setScrollFactor(0)
-      .setDepth(10);
-
     if (!this.debugMode) {
       setupCameraControls(this);
+      this.setupSelectionHandlers();
       this.installVisualToggles();
     }
 
-    this.titleText = this.add
-      .text(10, 10, this.debugMode ? 'Debug sim monitor' : 'Spectral RTS automata', {
-        fontFamily: 'Segoe UI, sans-serif',
-        fontSize: '12px',
-        color: '#9adcec',
-      })
-      .setOrigin(1, 0)
-      .setScrollFactor(0)
-      .setDepth(10);
-
-    this.layoutOverlay();
-    this.scale.on(Phaser.Scale.Events.RESIZE, this.layoutOverlay, this);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutOverlay, this);
-    });
+    this.refreshPlayPanel();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.destroyHtmlControls());
+    this.events.once(Phaser.Scenes.Events.DESTROY, () => this.destroyHtmlControls());
   }
 
   update(time: number, delta: number): void {
     if (this.debugMode) {
       if (this.debugComplete) {
-        this.renderHUD();
-        this.renderLog();
+        this.refreshPlayPanel();
         return;
       }
 
@@ -174,8 +154,7 @@ export class GameScene extends Phaser.Scene {
           break;
         }
       }
-      this.renderHUD();
-      this.renderLog();
+      this.refreshPlayPanel();
       return;
     }
 
@@ -191,8 +170,7 @@ export class GameScene extends Phaser.Scene {
       this.renderEntities(time, delta);
       this.combatRenderer?.update(time, delta);
     }
-    this.renderHUD();
-    this.renderLog();
+    this.refreshPlayPanel();
   }
 
   private processEvents(): void {
@@ -263,10 +241,6 @@ export class GameScene extends Phaser.Scene {
     if (this.logLines.length > 8) this.logLines.pop();
   }
 
-  private renderLog(): void {
-    this.logText.setText(this.logLines.join('\n'));
-  }
-
   private renderWorld(time: number, delta: number): void {
     this.signalField?.update(time, delta);
     this.oreRenderer?.updateOreFields(this.sim.getOrePatches(), time, delta);
@@ -279,11 +253,8 @@ export class GameScene extends Phaser.Scene {
     this.buildingRenderer.beginFrame();
     this.unitRenderer.beginFrame();
 
-    const seenLabels = new Set<string>();
-
     for (const b of this.sim.getBuildings()) {
       const house = this.sim.getHouse(b.houseId);
-      const def = STRUCT_DEFS[b.type];
       const profile = house ? this.profileForHouse(house) : fallbackProfile();
       const c = this.buildingCenter(b);
 
@@ -295,49 +266,36 @@ export class GameScene extends Phaser.Scene {
       this.buildingCompletionState.set(b.id, b.isComplete);
 
       this.buildingRenderer.drawBuilding(b, profile, time);
-      this.upsertEntityLabel(seenLabels, `building-${b.id}`, def.name, c.x, b.cellY * CELL_SIZE - 2, profile.primary);
     }
 
     for (const u of this.sim.getUnits()) {
       if (u.hp <= 0) continue;
       const house = this.sim.getHouse(u.houseId);
-      const def = UNIT_DEFS[u.type];
       const profile = house ? this.profileForHouse(house) : fallbackProfile();
-      const x = u.x * CELL_SIZE;
-      const y = u.y * CELL_SIZE;
 
       this.unitRenderer.drawUnit(u, profile, time);
       this.emitHarvesterVisuals(u, profile, time);
-      this.upsertEntityLabel(seenLabels, `unit-${u.id}`, def.name, x, y - 12, profile.primary);
     }
 
     for (const i of this.sim.getInfantry()) {
       if (i.hp <= 0) continue;
       const house = this.sim.getHouse(i.houseId);
-      const def = INFANTRY_DEFS[i.type];
       const profile = house ? this.profileForHouse(house) : fallbackProfile();
-      const x = i.x * CELL_SIZE;
-      const y = i.y * CELL_SIZE;
 
       this.unitRenderer.drawInfantry(i, profile, time);
-      this.upsertEntityLabel(seenLabels, `infantry-${i.id}`, def.name, x, y - 10, profile.primary);
     }
 
     for (const a of this.sim.getAircraft()) {
       if (a.hp <= 0) continue;
       const house = this.sim.getHouse(a.houseId);
-      const def = AIRCRAFT_DEFS[a.type];
       const profile = house ? this.profileForHouse(house) : fallbackProfile();
-      const x = a.x * CELL_SIZE;
-      const y = a.y * CELL_SIZE;
 
       this.unitRenderer.drawAircraft(a, profile, time);
-      this.upsertEntityLabel(seenLabels, `aircraft-${a.id}`, def.name, x, y - 14, profile.primary);
     }
 
     this.buildingRenderer.update(time, delta);
     this.unitRenderer.finishFrame(time, delta);
-    this.pruneEntityLabels(seenLabels);
+    this.pruneBuildingCompletionState();
   }
 
   private emitHarvesterVisuals(unit: Unit, profile: FactionVisualProfile, time: number): void {
@@ -356,45 +314,7 @@ export class GameScene extends Phaser.Scene {
     this.oreRenderer?.emitHarvestTendril(orePoint.x, orePoint.y, unitPoint.x, unitPoint.y, profile.accent);
   }
 
-  private upsertEntityLabel(
-    seenLabels: Set<string>,
-    key: string,
-    label: string,
-    x: number,
-    y: number,
-    color: number,
-  ): void {
-    seenLabels.add(key);
-
-    let text = this.entityLabels.get(key);
-    if (!text) {
-      text = this.add
-        .text(x, y, label, {
-          fontFamily: 'Consolas, monospace',
-          fontSize: '9px',
-          color: this.colorToCssHex(color),
-          backgroundColor: '#02051088',
-          padding: { x: 2, y: 1 },
-        })
-        .setOrigin(0.5, 1)
-        .setDepth(7)
-        .setResolution(2);
-      text.setStroke('#000000', 2);
-      this.entityLabels.set(key, text);
-    }
-
-    text.setPosition(x, y);
-    if (text.text !== label) text.setText(label);
-    text.setColor(this.colorToCssHex(color));
-  }
-
-  private pruneEntityLabels(seenLabels: Set<string>): void {
-    for (const [key, text] of this.entityLabels) {
-      if (seenLabels.has(key)) continue;
-      text.destroy();
-      this.entityLabels.delete(key);
-    }
-
+  private pruneBuildingCompletionState(): void {
     for (const id of [...this.buildingCompletionState.keys()]) {
       if (!this.sim.getBuildings().some((b) => b.id === id)) this.buildingCompletionState.delete(id);
     }
@@ -421,7 +341,65 @@ export class GameScene extends Phaser.Scene {
     this.combatRenderer?.setConfig(this.visualConfig);
   }
 
-  private renderHUD(): void {
+  private buildPlayPanel(): void {
+    const host = document.getElementById('game-panel-root') ?? document.body;
+    host.innerHTML = '';
+
+    const panel = document.createElement('div');
+    panel.className = 'setup-panel';
+
+    const title = document.createElement('div');
+    title.className = 'setup-title';
+    const heading = document.createElement('h1');
+    heading.textContent = this.debugMode ? 'Debug' : 'Spectate';
+    const subtitle = document.createElement('span');
+    subtitle.className = 'setup-help';
+    subtitle.textContent = this.debugMode ? 'Sim monitor' : 'Spectral RTS automata';
+    title.append(heading, subtitle);
+
+    const help = document.createElement('div');
+    help.className = 'setup-help';
+    help.textContent = 'Click a unit or building for details. Right-drag or touch-drag pans. Wheel or pinch zooms toward the cursor.';
+
+    const selectedSection = this.createPanelSection('Selected');
+    this.selectedInfoEl = document.createElement('div');
+    this.selectedInfoEl.className = 'setup-selected';
+    selectedSection.append(this.selectedInfoEl);
+
+    const statusSection = this.createPanelSection('Status');
+    this.statusInfoEl = document.createElement('div');
+    this.statusInfoEl.className = 'setup-selected';
+    statusSection.append(this.statusInfoEl);
+
+    const logSection = this.createPanelSection('Events');
+    this.logInfoEl = document.createElement('div');
+    this.logInfoEl.className = 'setup-selected';
+    logSection.append(this.logInfoEl);
+
+    panel.append(title, help, selectedSection, statusSection, logSection);
+    host.append(panel);
+    this.panelRoot = host;
+  }
+
+  private createPanelSection(title: string): HTMLDivElement {
+    const section = document.createElement('div');
+    section.className = 'setup-section';
+    const heading = document.createElement('h2');
+    heading.textContent = title;
+    section.append(heading);
+    return section;
+  }
+
+  private refreshPlayPanel(): void {
+    if (!this.selectedInfoEl || !this.statusInfoEl || !this.logInfoEl) return;
+
+    this.validateSelection();
+    this.selectedInfoEl.textContent = this.formatSelectedEntity();
+    this.statusInfoEl.textContent = this.formatStatusLines().join('\n');
+    this.logInfoEl.textContent = this.logLines.length > 0 ? this.logLines.join('\n') : 'No events yet.';
+  }
+
+  private formatStatusLines(): string[] {
     const houses = this.sim.getHouses();
     const lines = houses.map((h) => {
       const pwr = h.drain > 0 ? `${h.power}/${h.drain}` : `${h.power}`;
@@ -456,8 +434,164 @@ export class GameScene extends Phaser.Scene {
       if (this.debugStatus) lines.push(this.debugStatus);
     }
 
-    this.hudText.setText(lines.join('\n'));
-    this.layoutOverlay();
+    return lines;
+  }
+
+  private formatSelectedEntity(): string {
+    if (!this.selectedEntity) {
+      return 'Selected: none\nClick a unit or building on the map.';
+    }
+
+    const selection = this.selectedEntity;
+    if (selection.kind === 'building') {
+      const building = this.sim.getBuildings().find((b) => b.id === selection.id);
+      if (!building) return 'Selected: none';
+      const def = STRUCT_DEFS[building.type];
+      const house = this.sim.getHouse(building.houseId);
+      const lines = [
+        def.name,
+        `Health: ${building.hp}/${building.maxHp}`,
+        `Owner: ${house?.name ?? 'Unknown'}`,
+        `Cell: (${building.cellX}, ${building.cellY})`,
+      ];
+      if (!building.isComplete) {
+        lines.push(`Building: ${Math.floor((building.buildProgress / building.buildTime) * 100)}%`);
+      }
+      return lines.join('\n');
+    }
+
+    if (selection.kind === 'unit') {
+      const unit = this.sim.getUnits().find((u) => u.id === selection.id);
+      if (!unit || unit.hp <= 0) return 'Selected: none';
+      const def = UNIT_DEFS[unit.type];
+      const house = this.sim.getHouse(unit.houseId);
+      const lines = [
+        def.name,
+        `Health: ${unit.hp}/${unit.maxHp}`,
+        `Owner: ${house?.name ?? 'Unknown'}`,
+        `Position: (${unit.x.toFixed(1)}, ${unit.y.toFixed(1)})`,
+      ];
+      if (unit.cargo > 0) lines.push(`Cargo: ${unit.cargo}`);
+      return lines.join('\n');
+    }
+
+    if (selection.kind === 'infantry') {
+      const infantry = this.sim.getInfantry().find((i) => i.id === selection.id);
+      if (!infantry || infantry.hp <= 0) return 'Selected: none';
+      const def = INFANTRY_DEFS[infantry.type];
+      const house = this.sim.getHouse(infantry.houseId);
+      return [
+        def.name,
+        `Health: ${infantry.hp}/${infantry.maxHp}`,
+        `Owner: ${house?.name ?? 'Unknown'}`,
+        `Position: (${infantry.x.toFixed(1)}, ${infantry.y.toFixed(1)})`,
+      ].join('\n');
+    }
+
+    const aircraft = this.sim.getAircraft().find((a) => a.id === selection.id);
+    if (!aircraft || aircraft.hp <= 0) return 'Selected: none';
+    const def = AIRCRAFT_DEFS[aircraft.type];
+    const house = this.sim.getHouse(aircraft.houseId);
+    return [
+      def.name,
+      `Health: ${aircraft.hp}/${aircraft.maxHp}`,
+      `Owner: ${house?.name ?? 'Unknown'}`,
+      `Position: (${aircraft.x.toFixed(1)}, ${aircraft.y.toFixed(1)})`,
+    ].join('\n');
+  }
+
+  private validateSelection(): void {
+    if (!this.selectedEntity) return;
+    const { kind, id } = this.selectedEntity;
+    const exists =
+      kind === 'building'
+        ? this.sim.getBuildings().some((b) => b.id === id)
+        : kind === 'unit'
+          ? this.sim.getUnits().some((u) => u.id === id && u.hp > 0)
+          : kind === 'infantry'
+            ? this.sim.getInfantry().some((i) => i.id === id && i.hp > 0)
+            : this.sim.getAircraft().some((a) => a.id === id && a.hp > 0);
+    if (!exists) this.selectedEntity = null;
+  }
+
+  private setupSelectionHandlers(): void {
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (pointer.rightButtonDown()) return;
+      if (!pointerToCell(pointer, this.cameras.main)) return;
+      this.pointerStart = { x: pointer.x, y: pointer.y };
+    });
+
+    this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+      if (!this.pointerStart) return;
+      const distance = Phaser.Math.Distance.Between(this.pointerStart.x, this.pointerStart.y, pointer.x, pointer.y);
+      this.pointerStart = null;
+      if (distance > 12) return;
+      this.handleMapClick(pointer);
+    });
+  }
+
+  private handleMapClick(pointer: Phaser.Input.Pointer): void {
+    const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    const picked = this.pickEntityAtWorld(worldPoint.x, worldPoint.y);
+    this.selectedEntity = picked;
+    this.refreshPlayPanel();
+  }
+
+  private pickEntityAtWorld(worldX: number, worldY: number): EntitySelection | null {
+    let bestSelection: EntitySelection | null = null;
+    let bestDist = Infinity;
+
+    const consider = (selection: EntitySelection, entityX: number, entityY: number, radius: number): void => {
+      const dist = Math.hypot(worldX - entityX, worldY - entityY);
+      if (dist > radius || dist >= bestDist) return;
+      bestDist = dist;
+      bestSelection = selection;
+    };
+
+    for (const aircraft of this.sim.getAircraft()) {
+      if (aircraft.hp <= 0) continue;
+      consider(
+        { kind: 'aircraft', id: aircraft.id },
+        aircraft.x * CELL_SIZE,
+        aircraft.y * CELL_SIZE,
+        CELL_SIZE * 0.75,
+      );
+    }
+
+    for (const infantry of this.sim.getInfantry()) {
+      if (infantry.hp <= 0) continue;
+      consider(
+        { kind: 'infantry', id: infantry.id },
+        infantry.x * CELL_SIZE,
+        infantry.y * CELL_SIZE,
+        CELL_SIZE * 0.55,
+      );
+    }
+
+    for (const unit of this.sim.getUnits()) {
+      if (unit.hp <= 0) continue;
+      consider({ kind: 'unit', id: unit.id }, unit.x * CELL_SIZE, unit.y * CELL_SIZE, CELL_SIZE * 0.65);
+    }
+
+    const cellX = Math.floor(worldX / CELL_SIZE);
+    const cellY = Math.floor(worldY / CELL_SIZE);
+    const building = this.findBuildingAtCell(cellX, cellY);
+    if (building) {
+      const center = this.buildingCenter(building);
+      consider({ kind: 'building', id: building.id }, center.x, center.y, CELL_SIZE * 1.4);
+    }
+
+    return bestSelection;
+  }
+
+  private destroyHtmlControls(): void {
+    document.body.classList.remove('game-active');
+    if (this.panelRoot) this.panelRoot.innerHTML = '';
+    this.panelRoot = null;
+    this.selectedInfoEl = null;
+    this.statusInfoEl = null;
+    this.logInfoEl = null;
+    window.setTimeout(() => this.scale.refresh(), 0);
   }
 
   private completeDebugRun(stop: { result: 'defeat' | 'stall' | 'timeout'; reason: string }): void {
@@ -470,15 +604,13 @@ export class GameScene extends Phaser.Scene {
       .then((path) => {
         this.debugStatus = `Debug report saved: ${path}`;
         this.pushLog(`Report saved: ${path}`);
-        this.renderHUD();
-        this.renderLog();
+        this.refreshPlayPanel();
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         this.debugStatus = `Debug report write failed: ${message}`;
         this.pushLog(this.debugStatus);
-        this.renderHUD();
-        this.renderLog();
+        this.refreshPlayPanel();
       });
   }
 
@@ -572,23 +704,4 @@ export class GameScene extends Phaser.Scene {
     return new Phaser.Math.Vector2(cellX * CELL_SIZE, cellY * CELL_SIZE);
   }
 
-  private colorToCssHex(color: number): string {
-    return `#${color.toString(16).padStart(6, '0')}`;
-  }
-
-  private layoutOverlay(): void {
-    if (!this.hudText || !this.logText || !this.titleText) return;
-
-    const compact = this.scale.width < 760;
-    const hudWidth = compact ? Math.max(230, this.scale.width - 20) : Math.min(720, Math.max(360, this.scale.width - 28));
-    this.hudText.setPosition(10, 10);
-    this.hudText.setFontSize(compact ? 10 : 13);
-    this.hudText.setWordWrapWidth(hudWidth);
-
-    this.logText.setPosition(10, this.scale.height - 10);
-    this.logText.setFontSize(compact ? 9 : 11);
-    this.logText.setWordWrapWidth(compact ? Math.max(220, this.scale.width - 20) : Math.min(420, this.scale.width - 20));
-
-    this.titleText.setPosition(this.scale.width - 10, 10);
-  }
 }

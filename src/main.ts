@@ -9,7 +9,8 @@ const config: Phaser.Types.Core.GameConfig = {
   height: 896,
   backgroundColor: '#0a0a12',
   scale: {
-    mode: Phaser.Scale.RESIZE,
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   scene: [SetupScene, GameScene],
   render: {

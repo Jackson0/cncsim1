@@ -41,12 +41,29 @@
       body.setup-active #setup-panel-root {
         display: block;
       }
+      #game-panel-root {
+        display: none;
+        width: 380px;
+        min-width: 340px;
+        max-width: 420px;
+        height: 100vh;
+        overflow: hidden;
+        border-right: 1px solid rgba(154, 220, 236, 0.28);
+        background: rgba(2, 5, 16, 0.92);
+        box-shadow: 14px 0 34px rgba(0, 0, 0, 0.32);
+      }
+      body.game-active #game-panel-root {
+        display: block;
+      }
       #game-container {
         flex: 1 1 auto;
         min-width: 0;
         min-height: 0;
         width: 100%;
         height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         touch-action: none;
         user-select: none;
       }
@@ -162,6 +179,7 @@
         background: rgba(0, 0, 0, 0.26);
         color: #cde1f4;
         font: 12px/1.35 Consolas, monospace;
+        white-space: pre-line;
       }
       .setup-status {
         margin-top: 12px;
@@ -201,8 +219,20 @@
         #game-container {
           order: 1;
         }
-        body.setup-active #game-container {
+        body.setup-active #game-container,
+        body.game-active #game-container {
           height: 58vh;
+        }
+        #game-panel-root {
+          width: 100%;
+          max-width: none;
+          min-width: 0;
+          height: 42vh;
+          min-height: 270px;
+          border-right: 0;
+          border-top: 1px solid rgba(154, 220, 236, 0.28);
+          box-shadow: 0 -12px 34px rgba(0, 0, 0, 0.36);
+          order: 2;
         }
         .setup-panel {
           padding: 12px;
@@ -223,6 +253,7 @@
   <body>
     <div id="app-shell">
       <aside id="setup-panel-root" aria-label="Setup"></aside>
+      <aside id="game-panel-root" aria-label="Game info"></aside>
       <main id="game-container"></main>
     </div>
     <script type="module" src="/src/main.ts"></script>
