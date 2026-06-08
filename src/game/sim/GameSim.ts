@@ -45,6 +45,7 @@ import {
 } from '../entities';
 import { cellKey, dist, moveToward } from '../pathfinding';
 import { OccupancyTracker } from '../occupancy';
+import { SpatialHash } from '../spatialHash';
 import { processHouseAI } from '../ai/houseAI';
 
 export interface SimEvent {
@@ -269,6 +270,7 @@ export class GameSim {
   seed = 0;
   private rngState = 1;
   private occupancy = new OccupancyTracker();
+  private readonly spatialHash = new SpatialHash();
 
   /** Seeded mulberry32 PRNG; returns a float in [0, 1). */
   private rng(): number {
@@ -1368,6 +1370,7 @@ export class GameSim {
     this.updateLowPowerDamage();
     this.updateBuildingRepair();
     this.initOccupancy();
+    this.rebuildSpatialHash();
     this.updateTeamWaves();
     this.updateUnits();
     this.updateInfantry();
@@ -1510,6 +1513,27 @@ export class GameSim {
     }
     for (const i of this.infantry) {
       if (i.hp > 0) this.occupancy.seedInfantry(i.id, i.x, i.y);
+    }
+  }
+
+  /**
+   * Snapshots all alive entities into the spatial hash for O(1)-per-cell
+   * proximity queries during this tick's movement and combat phases.
+   * Must be called after initOccupancy() and before updateUnits/updateDefenses.
+   */
+  private rebuildSpatialHash(): void {
+    this.spatialHash.clear();
+    for (const b of this.buildings) {
+      if (b.isComplete) this.spatialHash.insert(b);
+    }
+    for (const u of this.units) {
+      if (u.hp > 0) this.spatialHash.insert(u);
+    }
+    for (const i of this.infantry) {
+      if (i.hp > 0) this.spatialHash.insert(i);
+    }
+    for (const a of this.aircraft) {
+      if (a.hp > 0) this.spatialHash.insert(a);
     }
   }
 
@@ -1882,11 +1906,20 @@ export class GameSim {
       );
     };
 
-    for (const entity of this.enemyTargets(houseId, false)) {
-      const next = score(entity);
-      if (next > bestScore) {
-        bestScore = next;
-        best = entity;
+    // Iterate pre-bucketed enemy entities — avoids rebuilding filter arrays every call.
+    // Aircraft are excluded to match the original enemyTargets(houseId, false) behavior.
+    for (const [hId, entities] of this.spatialHash.byHouse) {
+      if (hId === houseId) continue;
+      for (const entity of entities) {
+        if (this.isAircraft(entity)) continue;
+        if ('cellX' in entity) {
+          if (!(entity as Building).isComplete) continue;
+        } else if ((entity as Unit | Infantry).hp <= 0) continue;
+        const next = score(entity);
+        if (next > bestScore) {
+          bestScore = next;
+          best = entity;
+        }
       }
     }
 
@@ -1916,18 +1949,6 @@ export class GameSim {
       this.aircraft.find((a) => a.id === id) ??
       null
     );
-  }
-
-  private enemyTargets(houseId: number, airOnly: boolean): Array<Building | Unit | Infantry | Aircraft> {
-    const targets: Array<Building | Unit | Infantry | Aircraft> = [];
-    if (!airOnly) {
-      targets.push(...this.buildings.filter((b) => b.houseId !== houseId && b.isComplete));
-      targets.push(...this.units.filter((u) => u.houseId !== houseId && u.hp > 0));
-      targets.push(...this.infantry.filter((i) => i.houseId !== houseId && i.hp > 0));
-    } else {
-      targets.push(...this.aircraft.filter((a) => a.houseId !== houseId && a.hp > 0));
-    }
-    return targets;
   }
 
   private targetPosition(target: Building | Unit | Infantry | Aircraft): { x: number; y: number } {
@@ -1985,11 +2006,13 @@ export class GameSim {
     else if (hpRatio < 0.65) bonus += 35;
 
     if (!('cellX' in target) && teamSize > 0 && teamSize <= 3) {
-      const nearbyAllies = this.enemyTargets(-1, false).filter((entity) => {
+      const tp = this.targetPosition(target);
+      const nearbyAllies = this.spatialHash.queryRadius(tp.x, tp.y, 5).filter((entity) => {
         if (entity.houseId !== target.houseId || entity.id === target.id) return false;
-        const a = this.targetPosition(entity);
-        const b = this.targetPosition(target);
-        return dist(a.x, a.y, b.x, b.y) < 5;
+        if (this.isAircraft(entity) || 'cellX' in entity) return false;
+        if ((entity as Unit | Infantry).hp <= 0) return false;
+        const ep = this.targetPosition(entity);
+        return dist(ep.x, ep.y, tp.x, tp.y) < 5;
       }).length;
       if (nearbyAllies <= 1) bonus += 45;
     }
@@ -2011,17 +2034,22 @@ export class GameSim {
     let best: Building | Unit | Infantry | Aircraft | null = null;
     let bestD = range;
 
-    const check = (tx: number, ty: number, entity: Building | Unit | Infantry | Aircraft) => {
-      const d = dist(x, y, tx, ty);
+    for (const entity of this.spatialHash.queryRadius(x, y, range)) {
+      if (entity.houseId === houseId) continue;
+      if (airOnly) {
+        if (!this.isAircraft(entity) || (entity as Aircraft).hp <= 0) continue;
+      } else {
+        if (this.isAircraft(entity)) continue;
+        if ('cellX' in entity) {
+          if (!(entity as Building).isComplete) continue;
+        } else if ((entity as Unit | Infantry).hp <= 0) continue;
+      }
+      const pos = this.targetPosition(entity);
+      const d = dist(x, y, pos.x, pos.y);
       if (d <= bestD) {
         bestD = d;
         best = entity;
       }
-    };
-
-    for (const target of this.enemyTargets(houseId, airOnly)) {
-      const pos = this.targetPosition(target);
-      check(pos.x, pos.y, target);
     }
 
     return best;
